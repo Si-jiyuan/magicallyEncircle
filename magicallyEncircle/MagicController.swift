@@ -48,6 +48,7 @@ final class MagicController: NSObject, ObservableObject {
 
     private let holdDuration: TimeInterval = 2.0
     private let symbolThreshold: Double = 0.72
+    private let customThreshold: Double = 0.75
 
     private override init() {
         super.init()
@@ -472,26 +473,57 @@ final class MagicController: NSObject, ObservableObject {
         return result
     }
 
-    private func performGesture(_ points: [CGPoint]) {
-        // 滑动优先（但被用户自定义图案覆盖的动作不再走滑动）。
+    private func handleRecognizedStroke(_ points: [CGPoint]) {
+        let candidates = customCandidates() + builtInCandidates()
+        let ranked = GestureRecognizer.shared.ranked(points, candidates: candidates)
+        let ranking = Self.rankingText(ranked)
+
+        // 1) 明确的直线滑动优先：直线就该走内置滑动，
+        //    避免被"钩子"之类的自定义图案抢走。
         if let direction = Geometry.swipeDirection(points),
            let builtIn = BuiltInGesture.all.first(where: { $0.defaultSwipe == direction && !hasOverride($0.id) }) {
-            performBuiltIn(builtIn.action, extra: "滑动")
+            performBuiltIn(builtIn.action, extra: "滑动\n\(ranking)")
             return
         }
 
-        if let match = GestureRecognizer.shared.recognize(points, candidates: builtInCandidates()) {
-            if match.score >= symbolThreshold, let action = match.candidate.action {
-                performBuiltIn(action, extra: String(format: "%@ · 匹配 %.0f%%", match.candidate.name, match.score * 100))
-            } else {
-                showHUD(title: "未识别图案", detail: String(format: "最接近 %@ · %.0f%%", match.candidate.name, match.score * 100))
-            }
-        } else {
-            showHUD(title: "未识别图案", detail: "试试滑动，或到菜单设置图案")
+        // 2) 已绑定快捷键的自定义图案。
+        if let custom = ranked.first(where: { $0.candidate.customID != nil }), custom.score >= customThreshold {
+            performCustomGesture(custom.candidate.customID!, score: custom.score, ranking: ranking)
+            return
         }
+
+        // 3) 闭合圈 → 复制圈内文本。
+        if strokeClosed {
+            performLassoCopy()
+            return
+        }
+
+        // 4) 内置图案。
+        if let builtIn = ranked.first(where: { $0.candidate.action != nil }),
+           builtIn.score >= symbolThreshold,
+           let action = builtIn.candidate.action {
+            performBuiltIn(action, extra: String(format: "%@ %.0f%%\n%@", builtIn.candidate.name, builtIn.score * 100, ranking))
+            return
+        }
+
+        showHUD(title: "未识别图案", detail: ranking.isEmpty ? "无候选图案" : ranking)
     }
 
-    private func performCustomGesture(_ id: UUID, score: Double) {
+    /// 调试用：把候选按分数从高到低列出（同名只保留最高分）。
+    private static func rankingText(_ ranked: [(candidate: GestureCandidate, score: Double)], limit: Int = 5) -> String {
+        var seen = Set<String>()
+        var lines: [String] = []
+        for entry in ranked {
+            let name = entry.candidate.name
+            if seen.contains(name) { continue }
+            seen.insert(name)
+            lines.append(String(format: "%@  %.0f%%", name, entry.score * 100))
+            if lines.count >= limit { break }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func performCustomGesture(_ id: UUID, score: Double, ranking: String = "") {
         guard let gesture = customGestures.first(where: { $0.id == id }) else { return }
         guard let keyCode = gesture.keyCode else {
             showHUD(title: gesture.name, detail: "未绑定快捷键")
@@ -503,7 +535,8 @@ final class MagicController: NSObject, ObservableObject {
             display: gesture.keyDisplay
         )
         shortcut.send()
-        showHUD(title: gesture.name, detail: "\(gesture.keyDisplay) · 匹配 \(Int((score * 100).rounded()))%")
+        let head = "\(gesture.keyDisplay) · 匹配 \(Int((score * 100).rounded()))%"
+        showHUD(title: gesture.name, detail: ranking.isEmpty ? head : "\(head)\n\(ranking)")
     }
 
     private func performBuiltIn(_ action: GestureAction, extra: String) {
@@ -662,17 +695,7 @@ extension MagicController: InputMonitorDelegate {
         } else if let builtInID = recordingBuiltInID {
             saveBuiltInOverride(builtInID, points: currentPoints)
         } else if !didCapture {
-            // 用户自己录制的图案优先级最高：匹配上就直接执行绑定快捷键，
-            // 不再被「闭环=复制」或「滑动=内置动作」抢走。
-            if let match = GestureRecognizer.shared.recognize(currentPoints, candidates: customCandidates()),
-               match.score >= symbolThreshold,
-               let customID = match.candidate.customID {
-                performCustomGesture(customID, score: match.score)
-            } else if strokeClosed {
-                performLassoCopy()
-            } else {
-                performGesture(currentPoints)
-            }
+            handleRecognizedStroke(currentPoints)
         }
 
         currentView = nil

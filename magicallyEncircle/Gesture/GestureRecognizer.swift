@@ -26,18 +26,22 @@ final class GestureRecognizer {
 
     /// 在候选集合里返回得分最高的一个。
     func recognize(_ points: [CGPoint], candidates: [GestureCandidate]) -> (candidate: GestureCandidate, score: Double)? {
-        guard points.count >= 2, !candidates.isEmpty else { return nil }
+        ranked(points, candidates: candidates).first
+    }
+
+    /// 返回所有候选的得分（从高到低），用于调试与更精细的判断。
+    func ranked(_ points: [CGPoint], candidates: [GestureCandidate]) -> [(candidate: GestureCandidate, score: Double)] {
+        guard points.count >= 2, !candidates.isEmpty else { return [] }
         let candidate = GestureRecognizer.preprocess(points, sampleCount: sampleCount, squareSize: squareSize)
 
-        var best: (GestureCandidate, Double)?
+        var ranked: [(GestureCandidate, Double)] = []
+        ranked.reserveCapacity(candidates.count)
         for entry in candidates {
             let processed = GestureRecognizer.preprocess(entry.points, sampleCount: sampleCount, squareSize: squareSize)
             let score = GestureRecognizer.matchScore(candidate, processed, squareSize: squareSize)
-            if best == nil || score > best!.1 {
-                best = (entry, score)
-            }
+            ranked.append((entry, score))
         }
-        return best
+        return ranked.sorted { $0.1 > $1.1 }
     }
 
     // MARK: - 预处理
