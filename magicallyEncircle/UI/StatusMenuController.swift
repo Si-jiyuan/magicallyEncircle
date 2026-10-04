@@ -53,7 +53,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(styleMenuItem())
         menu.addItem(actionItem(controller.showRecognitionHUD ? "隐藏识别反馈" : "显示识别反馈", #selector(toggleHUD)))
-        menu.addItem(helpMenuItem())
+        menu.addItem(builtInGesturesMenuItem())
         menu.addItem(.separator())
         menu.addItem(recordMenuItem())
         if !controller.customGestures.isEmpty {
@@ -86,29 +86,70 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func helpMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "手势说明", action: nil, keyEquivalent: "")
+    private func builtInGesturesMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "内置手势", action: nil, keyEquivalent: "")
         let submenu = makeMenu()
-        let lines = [
-            "← / →   后退 / 前进",
-            "↑ / ↓   调度中心 / App 速览",
-            "Z 撤销   C 复制   V 粘贴",
-            "N 新建标签页   L 锁定屏幕",
-            "○ 闭环快松 → 复制圈内文本",
-            "○ 闭环按住 2 秒 → 截图圈选区域"
-        ]
-        for line in lines {
-            let entry = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-            entry.isEnabled = false
-            submenu.addItem(entry)
+        for builtIn in BuiltInGesture.all {
+            submenu.addItem(builtInItem(builtIn))
         }
+        submenu.addItem(.separator())
+
+        let note = NSMenuItem(title: "○ 闭环快松=复制文本 / 按住2秒=截图（不可改）", action: nil, keyEquivalent: "")
+        note.isEnabled = false
+        submenu.addItem(note)
+
+        submenu.addItem(actionItem("全部恢复默认图案", #selector(resetAllBuiltIns)))
         item.submenu = submenu
         return item
     }
 
+    private func builtInItem(_ builtIn: BuiltInGesture) -> NSMenuItem {
+        let item = NSMenuItem(title: "\(builtIn.title)（\(builtInDescription(builtIn))）", action: nil, keyEquivalent: "")
+        let submenu = makeMenu()
+
+        let record = actionItem("录制图案…", #selector(recordBuiltIn))
+        record.representedObject = builtIn.id
+        submenu.addItem(record)
+
+        let reset = actionItem("恢复默认图案", #selector(resetBuiltIn))
+        reset.representedObject = builtIn.id
+        reset.isEnabled = controller.overrideCount(builtIn.id) > 0
+        submenu.addItem(reset)
+
+        item.submenu = submenu
+        return item
+    }
+
+    private func builtInDescription(_ builtIn: BuiltInGesture) -> String {
+        let count = controller.overrideCount(builtIn.id)
+        let trigger: String
+        if count > 0 {
+            trigger = "自定义 \(count) 份"
+        } else if let swipe = builtIn.defaultSwipe {
+            trigger = swipeSymbol(swipe) + " 滑动"
+        } else if let name = builtIn.defaultTemplates.first?.name {
+            trigger = "默认图案 \(name)"
+        } else {
+            trigger = "未设置"
+        }
+        if let shortcut = builtIn.action.shortcut?.display, !shortcut.isEmpty {
+            return "\(shortcut) · \(trigger)"
+        }
+        return trigger
+    }
+
+    private func swipeSymbol(_ direction: SwipeDirection) -> String {
+        switch direction {
+        case .left: return "←"
+        case .right: return "→"
+        case .up: return "↑"
+        case .down: return "↓"
+        }
+    }
+
     private func recordMenuItem() -> NSMenuItem {
-        if controller.isRecordingGesture {
-            return actionItem("取消记录手势", #selector(cancelRecording))
+        if controller.isRecordingGesture || controller.recordingBuiltInID != nil {
+            return actionItem("取消记录", #selector(cancelRecording))
         }
         return actionItem("记录新手势", #selector(startRecording))
     }
@@ -169,9 +210,26 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func toggleEnabled() { controller.toggleEnabled() }
     @objc private func toggleHUD() { controller.toggleHUD() }
     @objc private func startRecording() { controller.beginRecordingGesture() }
-    @objc private func cancelRecording() { controller.cancelRecordingGesture() }
+    @objc private func cancelRecording() {
+        controller.cancelRecordingGesture()
+        controller.cancelRecordingBuiltInOverride()
+    }
     @objc private func exportGestures() { controller.exportGestures() }
     @objc private func importGestures() { controller.importGestures() }
+
+    @objc private func recordBuiltIn(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        controller.beginRecordingBuiltInOverride(id)
+    }
+
+    @objc private func resetBuiltIn(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        controller.resetBuiltInOverride(id)
+    }
+
+    @objc private func resetAllBuiltIns() {
+        controller.resetAllBuiltInOverrides()
+    }
     @objc private func cancelBinding() { controller.cancelPendingBinding() }
     @objc private func quit() { NSApp.terminate(nil) }
 

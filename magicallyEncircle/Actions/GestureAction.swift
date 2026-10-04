@@ -104,9 +104,9 @@ enum GestureAction: CaseIterable {
     case undo
     case copy
     case paste
-    case save
     case newTab
     case lockScreen
+    case showDesktop
 
     var title: String {
         switch self {
@@ -117,9 +117,9 @@ enum GestureAction: CaseIterable {
         case .undo: return "撤销"
         case .copy: return "复制"
         case .paste: return "粘贴"
-        case .save: return "保存"
         case .newTab: return "新建标签页"
         case .lockScreen: return "锁定屏幕"
+        case .showDesktop: return "显示桌面"
         }
     }
 
@@ -132,9 +132,9 @@ enum GestureAction: CaseIterable {
         case .undo: return KeyShortcut(keyCode: 6, flags: .maskCommand, display: "⌘Z")
         case .copy: return KeyShortcut(keyCode: 8, flags: .maskCommand, display: "⌘C")
         case .paste: return KeyShortcut(keyCode: 9, flags: .maskCommand, display: "⌘V")
-        case .save: return KeyShortcut(keyCode: 1, flags: .maskCommand, display: "⌘S")
         case .newTab: return KeyShortcut(keyCode: 17, flags: .maskCommand, display: "⌘T")
         case .lockScreen: return KeyShortcut(keyCode: 12, flags: [.maskControl, .maskCommand], display: "⌃⌘Q")
+        case .showDesktop: return KeyShortcut(keyCode: 103, flags: [], display: "F11")
         }
     }
 

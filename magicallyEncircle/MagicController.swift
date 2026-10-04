@@ -25,9 +25,12 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var customGestures: [CustomGesture] = []
     @Published private(set) var pendingBindingID: UUID?
     @Published private(set) var pendingKeyDisplay: String?
+    @Published private(set) var gestureOverrides: [String: [[CodablePoint]]] = [:]
+    @Published private(set) var recordingBuiltInID: String?
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
+    private let overrideStore = GestureOverrideStore()
 
     private var windows: [OverlayWindow] = []
     private var currentView: MagicCanvasView?
@@ -49,6 +52,7 @@ final class MagicController: NSObject, ObservableObject {
     private override init() {
         super.init()
         customGestures = store.load()
+        gestureOverrides = overrideStore.load()
         monitor.delegate = self
         monitor.isEnabled = isEnabled
         monitor.onKeyCaptured = { [weak self] keyCode, flags in
@@ -128,6 +132,7 @@ final class MagicController: NSObject, ObservableObject {
 
     func beginRecordingGesture() {
         cancelPendingBinding()
+        recordingBuiltInID = nil
         isRecordingGesture = true
         showHUD(title: "记录手势中", detail: "用 Option+左键画一个图案，松手即保存")
     }
@@ -135,6 +140,57 @@ final class MagicController: NSObject, ObservableObject {
     func cancelRecordingGesture() {
         isRecordingGesture = false
         showHUD(title: "已取消记录", detail: "")
+    }
+
+    // MARK: - 内置手势图案覆盖
+
+    func beginRecordingBuiltInOverride(_ id: String) {
+        guard let builtIn = BuiltInGesture.find(id) else { return }
+        cancelPendingBinding()
+        isRecordingGesture = false
+        recordingBuiltInID = id
+        showHUD(title: "录制「\(builtIn.title)」的图案", detail: "用 Option+左键画一个图案，松手保存")
+    }
+
+    func cancelRecordingBuiltInOverride() {
+        recordingBuiltInID = nil
+    }
+
+    private func saveBuiltInOverride(_ id: String, points: [CGPoint]) {
+        recordingBuiltInID = nil
+        guard points.count >= 2, Geometry.pathLength(points) > 30 else {
+            showHUD(title: "图案太短", detail: "请重新录制")
+            return
+        }
+        var list = gestureOverrides[id] ?? []
+        list.append(points.map(CodablePoint.init))
+        gestureOverrides[id] = list
+        overrideStore.save(gestureOverrides)
+        let title = BuiltInGesture.find(id)?.title ?? id
+        showHUD(title: "已更新「\(title)」", detail: "现在有 \(list.count) 份自定义图案")
+    }
+
+    func resetBuiltInOverride(_ id: String) {
+        guard gestureOverrides[id] != nil else { return }
+        gestureOverrides[id] = nil
+        overrideStore.save(gestureOverrides)
+        let title = BuiltInGesture.find(id)?.title ?? id
+        showHUD(title: "已恢复默认", detail: title)
+    }
+
+    func resetAllBuiltInOverrides() {
+        guard !gestureOverrides.isEmpty else { return }
+        gestureOverrides.removeAll()
+        overrideStore.save(gestureOverrides)
+        showHUD(title: "已全部恢复默认图案", detail: "")
+    }
+
+    func hasOverride(_ id: String) -> Bool {
+        !(gestureOverrides[id]?.isEmpty ?? true)
+    }
+
+    func overrideCount(_ id: String) -> Int {
+        gestureOverrides[id]?.count ?? 0
     }
 
     private func saveRecordedGesture(_ points: [CGPoint]) {
@@ -245,7 +301,7 @@ final class MagicController: NSObject, ObservableObject {
     // MARK: - 导入 / 导出
 
     func exportGestures() {
-        guard !customGestures.isEmpty else {
+        guard !customGestures.isEmpty || !gestureOverrides.isEmpty else {
             showHUD(title: "没有可导出的图案", detail: "")
             return
         }
@@ -259,9 +315,15 @@ final class MagicController: NSObject, ObservableObject {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(GesturePackage(version: 1, gestures: customGestures))
+            let package = GesturePackage(
+                version: 1,
+                gestures: customGestures,
+                builtInOverrides: gestureOverrides.isEmpty ? nil : gestureOverrides
+            )
+            let data = try encoder.encode(package)
             try data.write(to: url)
-            showHUD(title: "已导出手势", detail: "\(customGestures.count) 个图案")
+            let overrideCount = gestureOverrides.values.reduce(0) { $0 + $1.count }
+            showHUD(title: "已导出手势", detail: "\(customGestures.count) 个自定义 + \(overrideCount) 份内置覆盖")
         } catch {
             showHUD(title: "导出失败", detail: error.localizedDescription)
         }
@@ -277,6 +339,7 @@ final class MagicController: NSObject, ObservableObject {
         do {
             let data = try Data(contentsOf: url)
             let package = try JSONDecoder().decode(GesturePackage.self, from: data)
+
             var count = 0
             for imported in package.gestures {
                 var gesture = CustomGesture(name: uniqueName(imported.name), points: imported.points.map { $0.cgPoint })
@@ -287,6 +350,17 @@ final class MagicController: NSObject, ObservableObject {
                 count += 1
             }
             persist()
+
+            if let overrides = package.builtInOverrides {
+                for (id, samples) in overrides {
+                    var list = gestureOverrides[id] ?? []
+                    list.append(contentsOf: samples)
+                    gestureOverrides[id] = list
+                    count += samples.count
+                }
+                overrideStore.save(gestureOverrides)
+            }
+
             showHUD(title: "已导入手势", detail: "\(count) 个图案")
         } catch {
             showHUD(title: "导入失败", detail: "文件格式不正确")
@@ -374,34 +448,46 @@ final class MagicController: NSObject, ObservableObject {
         holdTimer = timer
     }
 
-    private func customInputs() -> [CustomTemplateInput] {
+    private func customCandidates() -> [GestureCandidate] {
         // 只有绑定了快捷键的自定义图案才参与匹配；
         // 未绑定的（例如录制备用的样本）不参与，避免挡住内置动作。
         customGestures.filter { $0.keyCode != nil }.map {
-            CustomTemplateInput(id: $0.id, name: $0.name, points: $0.points.map { $0.cgPoint })
+            GestureCandidate(name: $0.name, points: $0.points.map { $0.cgPoint }, action: nil, customID: $0.id)
         }
     }
 
-    private func performSymbolGesture(_ points: [CGPoint]) {
-        if let action = Geometry.swipeDirection(points) {
-            trigger(action, extra: action.shortcut?.display ?? "")
-            return
-        }
-
-        let match = GestureRecognizer.shared.recognize(points, custom: customInputs())
-        if let match, match.score >= symbolThreshold {
-            if let customID = match.customID {
-                performCustomGesture(customID, score: match.score)
-            } else if let action = match.action {
-                trigger(action, extra: String(format: "%@ · 匹配 %.0f%%", match.name, match.score * 100))
+    private func builtInCandidates() -> [GestureCandidate] {
+        var result: [GestureCandidate] = []
+        for builtIn in BuiltInGesture.all {
+            if let override = gestureOverrides[builtIn.id], !override.isEmpty {
+                for sample in override {
+                    result.append(GestureCandidate(name: builtIn.title, points: sample.map { $0.cgPoint }, action: builtIn.action, customID: nil))
+                }
+            } else {
+                for template in builtIn.defaultTemplates {
+                    result.append(GestureCandidate(name: template.name, points: template.points, action: template.action, customID: nil))
+                }
             }
+        }
+        return result
+    }
+
+    private func performGesture(_ points: [CGPoint]) {
+        // 滑动优先（但被用户自定义图案覆盖的动作不再走滑动）。
+        if let direction = Geometry.swipeDirection(points),
+           let builtIn = BuiltInGesture.all.first(where: { $0.defaultSwipe == direction && !hasOverride($0.id) }) {
+            performBuiltIn(builtIn.action, extra: "滑动")
             return
         }
 
-        if let match {
-            showHUD(title: "未识别图案", detail: String(format: "最接近 %@ · %.0f%%", match.name, match.score * 100))
+        if let match = GestureRecognizer.shared.recognize(points, candidates: builtInCandidates()) {
+            if match.score >= symbolThreshold, let action = match.candidate.action {
+                performBuiltIn(action, extra: String(format: "%@ · 匹配 %.0f%%", match.candidate.name, match.score * 100))
+            } else {
+                showHUD(title: "未识别图案", detail: String(format: "最接近 %@ · %.0f%%", match.candidate.name, match.score * 100))
+            }
         } else {
-            showHUD(title: "未识别图案", detail: "试试滑动，或到菜单记录新手势")
+            showHUD(title: "未识别图案", detail: "试试滑动，或到菜单设置图案")
         }
     }
 
@@ -420,7 +506,7 @@ final class MagicController: NSObject, ObservableObject {
         showHUD(title: gesture.name, detail: "\(gesture.keyDisplay) · 匹配 \(Int((score * 100).rounded()))%")
     }
 
-    private func trigger(_ action: GestureAction, extra: String) {
+    private func performBuiltIn(_ action: GestureAction, extra: String) {
         action.perform()
         var detail = action.shortcut?.display ?? ""
         if !extra.isEmpty {
@@ -432,7 +518,7 @@ final class MagicController: NSObject, ObservableObject {
     // MARK: - 圈选动作
 
     private func performLassoCapture() {
-        guard !didCapture, !isRecordingGesture, !currentPoints.isEmpty else { return }
+        guard !didCapture, !isRecordingGesture, recordingBuiltInID == nil, !currentPoints.isEmpty else { return }
         didCapture = true
         holdTimer?.invalidate()
         holdTimer = nil
@@ -550,7 +636,7 @@ extension MagicController: InputMonitorDelegate {
         }
 
         currentPoints.append(point)
-        if !isRecordingGesture, !strokeClosed, Geometry.isClosedLoop(currentPoints) {
+        if !isRecordingGesture, recordingBuiltInID == nil, !strokeClosed, Geometry.isClosedLoop(currentPoints) {
             strokeClosed = true
             startHoldTimer()
         }
@@ -573,16 +659,19 @@ extension MagicController: InputMonitorDelegate {
 
         if isRecordingGesture {
             saveRecordedGesture(currentPoints)
+        } else if let builtInID = recordingBuiltInID {
+            saveBuiltInOverride(builtInID, points: currentPoints)
         } else if !didCapture {
             // 用户自己录制的图案优先级最高：匹配上就直接执行绑定快捷键，
             // 不再被「闭环=复制」或「滑动=内置动作」抢走。
-            if let customMatch = GestureRecognizer.shared.matchCustom(currentPoints, custom: customInputs()),
-               customMatch.score >= symbolThreshold {
-                performCustomGesture(customMatch.id, score: customMatch.score)
+            if let match = GestureRecognizer.shared.recognize(currentPoints, candidates: customCandidates()),
+               match.score >= symbolThreshold,
+               let customID = match.candidate.customID {
+                performCustomGesture(customID, score: match.score)
             } else if strokeClosed {
                 performLassoCopy()
             } else {
-                performSymbolGesture(currentPoints)
+                performGesture(currentPoints)
             }
         }
 

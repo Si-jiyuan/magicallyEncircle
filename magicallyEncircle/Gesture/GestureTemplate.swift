@@ -16,6 +16,11 @@ struct GestureTemplate {
 }
 
 extension GestureTemplate {
+    /// 取某个动作的全部默认模板（同一动作可有多份样本）。
+    static func templates(for action: GestureAction) -> [GestureTemplate] {
+        all.filter { $0.action == action }
+    }
+
     static let all: [GestureTemplate] = [
         // MARK: Z → 撤销
         GestureTemplate(name: "Z", action: .undo, points: [CGPoint(x: -1188.0, y: 553.6), CGPoint(x: -1140.0, y: 551.7), CGPoint(x: -1091.8, y: 551.7), CGPoint(x: -1043.6, y: 551.7), CGPoint(x: -995.3, y: 551.7), CGPoint(x: -947.2, y: 553.2), CGPoint(x: -899.1, y: 555.4), CGPoint(x: -887.6, y: 543.3), CGPoint(x: -923.3, y: 511.0), CGPoint(x: -959.8, y: 479.5), CGPoint(x: -997.1, y: 449.0), CGPoint(x: -1035.9, y: 420.5), CGPoint(x: -1075.0, y: 392.3), CGPoint(x: -1115.5, y: 366.2), CGPoint(x: -1156.9, y: 341.4), CGPoint(x: -1199.5, y: 318.9), CGPoint(x: -1244.2, y: 301.0), CGPoint(x: -1290.1, y: 286.6), CGPoint(x: -1283.1, y: 275.7), CGPoint(x: -1235.3, y: 269.7), CGPoint(x: -1187.4, y: 264.4), CGPoint(x: -1139.4, y: 260.1), CGPoint(x: -1091.3, y: 257.1), CGPoint(x: -1043.2, y: 254.2), CGPoint(x: -995.0, y: 252.7), CGPoint(x: -946.8, y: 251.5), CGPoint(x: -898.6, y: 250.2), CGPoint(x: -850.4, y: 248.9), CGPoint(x: -802.2, y: 248.6), CGPoint(x: -754.0, y: 248.6), CGPoint(x: -705.8, y: 250.0), CGPoint(x: -661.0, y: 261.2)]),

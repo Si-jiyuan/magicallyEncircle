@@ -56,8 +56,8 @@ enum Geometry {
         return true
     }
 
-    /// 若轨迹近似一条直线，返回其方向对应的动作。AppKit 坐标 y 轴向上。
-    static func swipeDirection(_ points: [CGPoint]) -> GestureAction? {
+    /// 若轨迹近似一条直线，返回其滑动方向。AppKit 坐标 y 轴向上。
+    static func swipeDirection(_ points: [CGPoint]) -> SwipeDirection? {
         let length = pathLength(points)
         guard length > 60, let first = points.first, let last = points.last else { return nil }
         let straight = distance(first, last)
@@ -66,9 +66,9 @@ enum Geometry {
         let dx = last.x - first.x
         let dy = last.y - first.y
         if abs(dx) >= abs(dy) {
-            return dx >= 0 ? .forward : .back
+            return dx >= 0 ? .right : .left
         } else {
-            return dy >= 0 ? .missionControl : .appExpose
+            return dy >= 0 ? .up : .down
         }
     }
 }

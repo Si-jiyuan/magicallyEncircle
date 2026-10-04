@@ -6,17 +6,10 @@
 import CoreGraphics
 import Foundation
 
-/// 一个待识别的自定义图案输入。
-struct CustomTemplateInput {
-    let id: UUID
+/// 一个待匹配的手势候选（内置模板或用户自定义图案）。
+struct GestureCandidate {
     let name: String
     let points: [CGPoint]
-}
-
-/// 识别结果：可能是内置动作，也可能是自定义图案。
-struct RecognizedGesture {
-    let name: String
-    let score: Double
     let action: GestureAction?
     let customID: UUID?
 }
@@ -29,51 +22,19 @@ final class GestureRecognizer {
     private let sampleCount = 64
     private let squareSize: CGFloat = 250
 
-    private var builtIn: [(name: String, action: GestureAction, processed: [CGPoint])] = []
+    private init() {}
 
-    private init() {
-        builtIn = GestureTemplate.all.map { template in
-            (template.name, template.action, GestureRecognizer.preprocess(template.points, sampleCount: sampleCount, squareSize: squareSize))
-        }
-    }
-
-    /// 在内置与自定义图案中返回得分最高的一个。
-    func recognize(_ points: [CGPoint], custom: [CustomTemplateInput]) -> RecognizedGesture? {
-        guard points.count >= 2 else { return nil }
+    /// 在候选集合里返回得分最高的一个。
+    func recognize(_ points: [CGPoint], candidates: [GestureCandidate]) -> (candidate: GestureCandidate, score: Double)? {
+        guard points.count >= 2, !candidates.isEmpty else { return nil }
         let candidate = GestureRecognizer.preprocess(points, sampleCount: sampleCount, squareSize: squareSize)
 
-        var best: RecognizedGesture?
-        func consider(_ result: RecognizedGesture) {
-            if best == nil || result.score > best!.score {
-                best = result
-            }
-        }
-
-        for entry in builtIn {
-            let score = GestureRecognizer.matchScore(candidate, entry.processed, squareSize: squareSize)
-            consider(RecognizedGesture(name: entry.name, score: score, action: entry.action, customID: nil))
-        }
-
-        for entry in custom {
+        var best: (GestureCandidate, Double)?
+        for entry in candidates {
             let processed = GestureRecognizer.preprocess(entry.points, sampleCount: sampleCount, squareSize: squareSize)
             let score = GestureRecognizer.matchScore(candidate, processed, squareSize: squareSize)
-            consider(RecognizedGesture(name: entry.name, score: score, action: nil, customID: entry.id))
-        }
-
-        return best
-    }
-
-    /// 只在自定义图案里找最佳匹配（用于让用户录制的图案优先于内置逻辑）。
-    func matchCustom(_ points: [CGPoint], custom: [CustomTemplateInput]) -> (id: UUID, name: String, score: Double)? {
-        guard points.count >= 2, !custom.isEmpty else { return nil }
-        let candidate = GestureRecognizer.preprocess(points, sampleCount: sampleCount, squareSize: squareSize)
-
-        var best: (id: UUID, name: String, score: Double)?
-        for entry in custom {
-            let processed = GestureRecognizer.preprocess(entry.points, sampleCount: sampleCount, squareSize: squareSize)
-            let score = GestureRecognizer.matchScore(candidate, processed, squareSize: squareSize)
-            if best == nil || score > best!.score {
-                best = (entry.id, entry.name, score)
+            if best == nil || score > best!.1 {
+                best = (entry, score)
             }
         }
         return best
