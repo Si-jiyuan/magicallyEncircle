@@ -151,8 +151,13 @@ final class InputMonitor {
         if optionNow, !optionDown {
             optionDown = true
             optionDownTime = now
-            let isDoubleTap = lastOptionWasTap && (now - lastOptionUpTime) < doubleTapInterval
-            isMultiStrokeSession = isDoubleTap
+            switch MultiStrokeMode.current {
+            case .doublePress:
+                let isDoubleTap = lastOptionWasTap && (now - lastOptionUpTime) < doubleTapInterval
+                isMultiStrokeSession = isDoubleTap
+            case .singlePress:
+                isMultiStrokeSession = true
+            }
         } else if !optionNow, optionDown {
             optionDown = false
             lastOptionWasTap = (now - optionDownTime) < tapMaxDuration

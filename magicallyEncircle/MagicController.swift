@@ -25,8 +25,10 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var customGestures: [CustomGesture] = []
     @Published private(set) var pendingBindingID: UUID?
     @Published private(set) var pendingKeyDisplay: String?
-    @Published private(set) var gestureOverrides: [String: [[CodablePoint]]] = [:]
+    @Published private(set) var gestureOverrides: [String: [[[CodablePoint]]]] = [:]
     @Published private(set) var recordingBuiltInID: String?
+    @Published private(set) var closeAction: CloseAction = CloseAction.current
+    @Published private(set) var multiStrokeMode: MultiStrokeMode = MultiStrokeMode.current
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
@@ -136,7 +138,7 @@ final class MagicController: NSObject, ObservableObject {
         cancelPendingBinding()
         recordingBuiltInID = nil
         isRecordingGesture = true
-        showHUD(title: "记录手势中", detail: "用 Option+左键画一个图案，松手即保存")
+        showHUD(title: "记录图案中", detail: "用 Option+左键画一个图案，松手即保存")
     }
 
     func cancelRecordingGesture() {
@@ -160,14 +162,14 @@ final class MagicController: NSObject, ObservableObject {
 
     private func saveBuiltInOverride(_ id: String, strokes: [[CGPoint]]) {
         recordingBuiltInID = nil
-        // 内置图案覆盖按单笔样本存储（多笔时合并为一笔）。
-        let merged = strokes.flatMap { $0 }
-        guard merged.count >= 2, Geometry.pathLength(merged) > 30 else {
+        let valid = strokes.filter { $0.count >= 2 }
+        let totalLength = valid.reduce(CGFloat(0)) { $0 + Geometry.pathLength($1) }
+        guard !valid.isEmpty, totalLength > 30 else {
             showHUD(title: "图案太短", detail: "请重新录制")
             return
         }
         var list = gestureOverrides[id] ?? []
-        list.append(merged.map(CodablePoint.init))
+        list.append(valid.map { $0.map(CodablePoint.init) })
         gestureOverrides[id] = list
         overrideStore.save(gestureOverrides)
         let title = BuiltInGesture.find(id)?.title ?? id
@@ -197,6 +199,31 @@ final class MagicController: NSObject, ObservableObject {
         gestureOverrides[id]?.count ?? 0
     }
 
+    // MARK: - 设置窗口
+
+    func setBuiltInOverride(_ id: String, strokes: [[CGPoint]]) {
+        saveBuiltInOverride(id, strokes: strokes)
+    }
+
+    func addCustomGesture(name: String, strokes: [[CGPoint]]) {
+        let valid = strokes.filter { $0.count >= 2 }
+        guard !valid.isEmpty else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = trimmed.isEmpty ? "图案\(customGestures.count + 1)" : uniqueName(trimmed)
+        customGestures.append(CustomGesture(name: resolved, strokes: valid))
+        persist()
+    }
+
+    func setCloseAction(_ action: CloseAction) {
+        closeAction = action
+        CloseAction.current = action
+    }
+
+    func setMultiStrokeMode(_ mode: MultiStrokeMode) {
+        multiStrokeMode = mode
+        MultiStrokeMode.current = mode
+    }
+
     private func saveRecordedGesture(_ strokes: [[CGPoint]]) {
         isRecordingGesture = false
         let valid = strokes.filter { $0.count >= 2 }
@@ -209,7 +236,7 @@ final class MagicController: NSObject, ObservableObject {
         customGestures.append(gesture)
         persist()
         let kind = valid.count > 1 ? "（\(valid.count) 笔）" : ""
-        showHUD(title: "已保存 \(gesture.name)\(kind)", detail: "到菜单「自定义手势」绑定快捷键")
+        showHUD(title: "已保存 \(gesture.name)\(kind)", detail: "到菜单「自定义图案」绑定快捷键")
     }
 
     // MARK: - 快捷键绑定
@@ -266,7 +293,7 @@ final class MagicController: NSObject, ObservableObject {
 
         let alert = NSAlert()
         alert.messageText = "重命名图案"
-        alert.informativeText = "为这个手势起个名字"
+        alert.informativeText = "为这个图案起个名字"
         alert.addButton(withTitle: "确定")
         alert.addButton(withTitle: "取消")
 
@@ -330,7 +357,7 @@ final class MagicController: NSObject, ObservableObject {
             let data = try encoder.encode(package)
             try data.write(to: url)
             let overrideCount = gestureOverrides.values.reduce(0) { $0 + $1.count }
-            showHUD(title: "已导出手势", detail: "\(customGestures.count) 个自定义 + \(overrideCount) 份内置覆盖")
+            showHUD(title: "已导出图案", detail: "\(customGestures.count) 个自定义 + \(overrideCount) 份内置覆盖")
         } catch {
             showHUD(title: "导出失败", detail: error.localizedDescription)
         }
@@ -338,7 +365,7 @@ final class MagicController: NSObject, ObservableObject {
 
     func importGestures() {
         let panel = NSOpenPanel()
-        panel.title = "导入手势"
+        panel.title = "导入图案"
         panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -368,7 +395,7 @@ final class MagicController: NSObject, ObservableObject {
                 overrideStore.save(gestureOverrides)
             }
 
-            showHUD(title: "已导入手势", detail: "\(count) 个图案")
+            showHUD(title: "已导入图案", detail: "\(count) 个图案")
         } catch {
             showHUD(title: "导入失败", detail: "文件格式不正确")
         }
@@ -473,11 +500,11 @@ final class MagicController: NSObject, ObservableObject {
         for builtIn in BuiltInGesture.all {
             if let override = gestureOverrides[builtIn.id], !override.isEmpty {
                 for sample in override {
-                    result.append(GestureCandidate(name: builtIn.title, strokes: [sample.map { $0.cgPoint }], action: builtIn.action, customID: nil))
+                    result.append(GestureCandidate(name: builtIn.title, strokes: sample.map { $0.map { $0.cgPoint } }, action: builtIn.action, customID: nil))
                 }
             } else {
-                for template in builtIn.defaultTemplates {
-                    result.append(GestureCandidate(name: template.name, strokes: [template.points], action: template.action, customID: nil))
+                for sample in builtIn.defaultSamples {
+                    result.append(GestureCandidate(name: builtIn.title, strokes: sample, action: builtIn.action, customID: nil))
                 }
             }
         }

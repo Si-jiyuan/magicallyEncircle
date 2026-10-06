@@ -10,5 +10,5 @@ import Foundation
 struct GesturePackage: Codable {
     var version: Int
     var gestures: [CustomGesture]
-    var builtInOverrides: [String: [[CodablePoint]]]?
+    var builtInOverrides: [String: [[[CodablePoint]]]]?
 }

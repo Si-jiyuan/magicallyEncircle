@@ -63,6 +63,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(actionItem("导出自定义图案…", #selector(exportGestures)))
         menu.addItem(actionItem("导入自定义图案…", #selector(importGestures)))
         menu.addItem(.separator())
+        menu.addItem(actionItem("设置…", #selector(openSettings)))
+        menu.addItem(.separator())
         let quit = actionItem("退出", #selector(quit), keyEquivalent: "q")
         menu.addItem(quit)
     }
@@ -87,7 +89,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     private func builtInGesturesMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "内置手势", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "内置图案", action: nil, keyEquivalent: "")
         let submenu = makeMenu()
         for builtIn in BuiltInGesture.all {
             submenu.addItem(builtInItem(builtIn))
@@ -127,8 +129,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             trigger = "自定义 \(count) 份"
         } else if let swipe = builtIn.defaultSwipe {
             trigger = swipeSymbol(swipe) + " 滑动"
-        } else if let name = builtIn.defaultTemplates.first?.name {
-            trigger = "默认图案 \(name)"
+        } else if !builtIn.defaultSamples.isEmpty {
+            trigger = "默认图案"
         } else {
             trigger = "未设置"
         }
@@ -151,11 +153,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         if controller.isRecordingGesture || controller.recordingBuiltInID != nil {
             return actionItem("取消记录", #selector(cancelRecording))
         }
-        return actionItem("记录新手势", #selector(startRecording))
+        return actionItem("记录新图案", #selector(startRecording))
     }
 
     private func customGesturesMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "自定义手势", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "自定义图案", action: nil, keyEquivalent: "")
         let submenu = makeMenu()
         for gesture in controller.customGestures {
             submenu.addItem(customGestureItem(gesture))
@@ -232,6 +234,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
     @objc private func cancelBinding() { controller.cancelPendingBinding() }
     @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func openSettings() { SettingsWindowController.shared.show() }
 
     @objc private func selectStyle(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let style = MagicStyle(rawValue: raw) else { return }

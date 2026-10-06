@@ -107,6 +107,7 @@ enum GestureAction: CaseIterable {
     case newTab
     case lockScreen
     case showDesktop
+    case close
 
     var title: String {
         switch self {
@@ -120,6 +121,7 @@ enum GestureAction: CaseIterable {
         case .newTab: return "新建标签页"
         case .lockScreen: return "锁定屏幕"
         case .showDesktop: return "显示桌面"
+        case .close: return "关闭"
         }
     }
 
@@ -135,6 +137,7 @@ enum GestureAction: CaseIterable {
         case .newTab: return KeyShortcut(keyCode: 17, flags: .maskCommand, display: "⌘T")
         case .lockScreen: return KeyShortcut(keyCode: 12, flags: [.maskControl, .maskCommand], display: "⌃⌘Q")
         case .showDesktop: return KeyShortcut(keyCode: 103, flags: [], display: "F11")
+        case .close: return CloseAction.current.shortcut
         }
     }
 
