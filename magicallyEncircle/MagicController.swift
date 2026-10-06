@@ -29,10 +29,12 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var recordingBuiltInID: String?
     @Published private(set) var closeAction: CloseAction = CloseAction.current
     @Published private(set) var multiStrokeMode: MultiStrokeMode = MultiStrokeMode.current
+    @Published private(set) var playbackSpeed: Double = PlaybackSpeed.current
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
     private let overrideStore = GestureOverrideStore()
+    private let patternPlayer = PatternPlayer()
 
     private var windows: [OverlayWindow] = []
     private var currentView: MagicCanvasView?
@@ -88,6 +90,7 @@ final class MagicController: NSObject, ObservableObject {
 
     func stop() {
         monitor.stop()
+        patternPlayer.cancel()
         holdTimer?.invalidate()
         holdTimer = nil
         NotificationCenter.default.removeObserver(self)
@@ -222,6 +225,55 @@ final class MagicController: NSObject, ObservableObject {
     func setMultiStrokeMode(_ mode: MultiStrokeMode) {
         multiStrokeMode = mode
         MultiStrokeMode.current = mode
+    }
+
+    func setPlaybackSpeed(_ speed: Double) {
+        playbackSpeed = speed
+        PlaybackSpeed.current = speed
+    }
+
+    // MARK: - 图案播放
+
+    func playBuiltIn(_ id: String) {
+        guard let builtIn = BuiltInGesture.find(id) else { return }
+        if let first = gestureOverrides[id]?.first {
+            playPattern(first.map { $0.map { $0.cgPoint } })
+        } else if let first = builtIn.defaultSamples.first {
+            playPattern(first)
+        }
+    }
+
+    func playCustomGesture(_ id: UUID) {
+        guard let gesture = customGestures.first(where: { $0.id == id }) else { return }
+        playPattern(gesture.strokesCG)
+    }
+
+    func playPattern(_ strokes: [[CGPoint]]) {
+        let valid = strokes.filter { $0.count >= 2 }
+        guard !valid.isEmpty else { return }
+
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main,
+              let window = windows.first(where: { $0.targetScreen === screen }) ?? windows.first else { return }
+
+        let all = valid.flatMap { $0 }
+        let box = Geometry.boundingBox(all)
+        let maxDimension = max(box.width, box.height, 1)
+        let targetSize = min(screen.frame.width, screen.frame.height) * 0.35
+        let scale = targetSize / maxDimension
+        let center = CGPoint(x: screen.frame.midX, y: screen.frame.midY)
+        let patternCenter = CGPoint(x: box.midX, y: box.midY)
+
+        let mapped = valid.map { stroke in
+            stroke.map { point in
+                window.convertPoint(fromScreen: CGPoint(
+                    x: center.x + (point.x - patternCenter.x) * scale,
+                    y: center.y + (point.y - patternCenter.y) * scale
+                ))
+            }
+        }
+
+        patternPlayer.play(strokes: mapped, on: window.canvasView, speed: playbackSpeed)
     }
 
     private func saveRecordedGesture(_ strokes: [[CGPoint]]) {
@@ -686,6 +738,7 @@ final class MagicController: NSObject, ObservableObject {
 extension MagicController: InputMonitorDelegate {
     func inputMonitor(_ monitor: InputMonitor, didBeginAt point: CGPoint, at time: TimeInterval) {
         guard isEnabled, let (window, view) = target(for: point) else { return }
+        patternPlayer.cancel()
         resetStrokeState()
         if monitor.isMultiStrokeSession {
             view.pinsStrokes = true

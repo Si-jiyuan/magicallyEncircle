@@ -27,11 +27,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .general: return "gearshape"
         case .style: return "paintpalette"
         case .builtIn: return "square.grid.2x2"
         case .custom: return "hand.draw"
         case .record: return "pencil.tip"
-        case .general: return "gearshape"
         }
     }
 }
@@ -52,12 +52,9 @@ struct SettingsView: View {
 
             Divider()
 
-            ScrollView {
-                detail
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(20)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(20)
         }
         .frame(minWidth: 380, minHeight: 320)
     }
@@ -65,13 +62,19 @@ struct SettingsView: View {
     @ViewBuilder
     private var detail: some View {
         switch section {
+        case .general: GeneralSection(controller: controller)
         case .style: StyleSection(controller: controller)
         case .builtIn: BuiltInSection(controller: controller)
         case .custom: CustomSection(controller: controller)
         case .record: RecordSection(controller: controller)
-        case .general: GeneralSection(controller: controller)
         }
     }
+}
+
+/// 画布用的是 SwiftUI 坐标（y 向下），统一转成 AppKit 坐标（y 向上）再存储，
+/// 否则预览/播放会垂直翻转。
+private func normalizedStrokes(_ strokes: [[CGPoint]]) -> [[CGPoint]] {
+    strokes.map { $0.map { CGPoint(x: $0.x, y: -$0.y) } }
 }
 
 // MARK: - 视觉风格
@@ -80,31 +83,34 @@ private struct StyleSection: View {
     @ObservedObject var controller: MagicController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("视觉风格").font(.title2).bold()
-            Text("魔法线条的外观样式。").font(.caption).foregroundStyle(.secondary)
-            ForEach(MagicStyle.allCases) { style in
-                Button {
-                    controller.selectStyle(style)
-                } label: {
-                    HStack {
-                        Image(systemName: controller.style == style ? "largecircle.fill.circle" : "circle")
-                        Text(style.title)
-                        Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("视觉风格").font(.title2).bold()
+                Text("魔法线条的外观样式。").font(.caption).foregroundStyle(.secondary)
+                ForEach(MagicStyle.allCases) { style in
+                    Button {
+                        controller.selectStyle(style)
+                    } label: {
+                        HStack {
+                            Image(systemName: controller.style == style ? "largecircle.fill.circle" : "circle")
+                            Text(style.title)
+                            Spacer()
+                        }
+                        .padding(10)
+                        .contentShape(Rectangle())
                     }
-                    .padding(10)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(controller.style == style ? Color.accentColor.opacity(0.15) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.2))
+                    )
                 }
-                .buttonStyle(.plain)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(controller.style == style ? Color.accentColor.opacity(0.15) : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.2))
-                )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -117,33 +123,43 @@ private struct BuiltInSection: View {
     @State private var strokes: [[CGPoint]] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("内置图案").font(.title2).bold()
-            Text("为每个动作录制自己的图案（在画布上画，可多笔画）。").font(.caption).foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("内置图案").font(.title2).bold()
+                Text("为每个动作录制自己的图案（在画布上画，可多笔画）。").font(.caption).foregroundStyle(.secondary)
 
-            ForEach(BuiltInGesture.all) { builtIn in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(builtIn.title).font(.headline)
-                        Text(description(builtIn)).font(.caption).foregroundStyle(.secondary)
+                ForEach(BuiltInGesture.all) { builtIn in
+                    HStack {
+                        Button { controller.playBuiltIn(builtIn.id) } label: {
+                            Image(systemName: "play.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(controller.overrideCount(builtIn.id) == 0 && builtIn.defaultSamples.isEmpty)
+                        .help("播放图案")
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(builtIn.title).font(.headline)
+                            Text(description(builtIn)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("录制…") {
+                            strokes = []
+                            recording = builtIn
+                        }
+                        Button("恢复默认") {
+                            controller.resetBuiltInOverride(builtIn.id)
+                        }
+                        .disabled(controller.overrideCount(builtIn.id) == 0)
                     }
-                    Spacer()
-                    Button("录制…") {
-                        strokes = []
-                        recording = builtIn
-                    }
-                    Button("恢复默认") {
-                        controller.resetBuiltInOverride(builtIn.id)
-                    }
-                    .disabled(controller.overrideCount(builtIn.id) == 0)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
                 }
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .sheet(item: $recording) { builtIn in
             RecordSheet(title: builtIn.title, strokes: $strokes) {
-                controller.setBuiltInOverride(builtIn.id, strokes: strokes)
+                controller.setBuiltInOverride(builtIn.id, strokes: normalizedStrokes(strokes))
                 recording = nil
             } onCancel: {
                 recording = nil
@@ -192,50 +208,66 @@ private struct CustomSection: View {
             if controller.customGestures.isEmpty {
                 Text("还没有自定义图案。到「记录图案」里画一个吧。")
                     .foregroundStyle(.secondary)
+                Spacer()
             } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 110, maximum: 200), spacing: 12)],
-                    spacing: 12
-                ) {
-                    ForEach(controller.customGestures) { gesture in
-                        CustomGestureCard(
-                            gesture: gesture,
-                            preview: controller.previewImage(for: gesture),
-                            isSelected: selected == gesture.id
-                        )
-                        .onTapGesture { selected = gesture.id }
-                    }
-                }
-                .padding(.vertical, 4)
-
-                if let id = selected, let gesture = controller.customGestures.first(where: { $0.id == id }) {
-                    HStack {
-                        Button("重命名…") { controller.renameGesture(id) }
-                        Button("设置快捷键") { controller.beginKeyBinding(for: id) }
-                        Button("删除") {
-                            controller.deleteGesture(id)
-                            selected = nil
+                ScrollView {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 110, maximum: 200), spacing: 12)],
+                        spacing: 12
+                    ) {
+                        ForEach(controller.customGestures) { gesture in
+                            CustomGestureCard(
+                                gesture: gesture,
+                                preview: controller.previewImage(for: gesture),
+                                isSelected: selected == gesture.id,
+                                onPlay: { controller.playCustomGesture(gesture.id) }
+                            )
+                            .onTapGesture { selected = gesture.id }
                         }
                     }
-
-                    if controller.pendingBindingID == id {
-                        HStack {
-                            if let display = controller.pendingKeyDisplay {
-                                Text("已捕获 \(display)")
-                                Button("保存") { controller.commitPendingBinding() }
-                            } else {
-                                Text("请在键盘上按下快捷键…").foregroundStyle(.secondary)
-                            }
-                            Button("取消") { controller.cancelPendingBinding() }
-                        }
-                    } else if !gesture.keyDisplay.isEmpty {
-                        Text("当前快捷键：\(gesture.keyDisplay)").font(.caption).foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("选中上方一个图案以设置快捷键或重命名。").font(.caption).foregroundStyle(.secondary)
+                    .padding(4)
                 }
+                .frame(maxHeight: .infinity)
+
+                actionBar
             }
         }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private var actionBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let id = selected, let gesture = controller.customGestures.first(where: { $0.id == id }) {
+                HStack {
+                    Button("重命名…") { controller.renameGesture(id) }
+                    Button("设置快捷键") { controller.beginKeyBinding(for: id) }
+                    Button("删除") {
+                        controller.deleteGesture(id)
+                        selected = nil
+                    }
+                }
+
+                if controller.pendingBindingID == id {
+                    HStack {
+                        if let display = controller.pendingKeyDisplay {
+                            Text("已捕获 \(display)")
+                            Button("保存") { controller.commitPendingBinding() }
+                        } else {
+                            Text("请在键盘上按下快捷键…").foregroundStyle(.secondary)
+                        }
+                        Button("取消") { controller.cancelPendingBinding() }
+                    }
+                } else if !gesture.keyDisplay.isEmpty {
+                    Text("当前快捷键：\(gesture.keyDisplay)").font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                Text("点击上方图案以设置快捷键或重命名。").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
     }
 }
 
@@ -247,29 +279,32 @@ private struct RecordSection: View {
     @State private var name: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("记录图案").font(.title2).bold()
-            Text("在下方画布上绘制（无需按 Option，可多笔画），然后保存为自定义图案。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("记录图案").font(.title2).bold()
+                Text("在下方画布上绘制（无需按 Option，可多笔画），然后保存为自定义图案。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-            PatternCanvas(strokes: $strokes)
-                .frame(minHeight: 220)
+                PatternCanvas(strokes: $strokes)
+                    .frame(minHeight: 220)
 
-            HStack {
-                TextField("名称（可选）", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-                Button("清空") { strokes = [] }
-                Spacer()
-                Button("保存为自定义图案") {
-                    controller.addCustomGesture(name: name, strokes: strokes)
-                    strokes = []
-                    name = ""
+                HStack {
+                    TextField("名称（可选）", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                    Button("清空") { strokes = [] }
+                    Spacer()
+                    Button("保存为自定义图案") {
+                        controller.addCustomGesture(name: name, strokes: normalizedStrokes(strokes))
+                        strokes = []
+                        name = ""
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(strokes.isEmpty)
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(strokes.isEmpty)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -280,51 +315,71 @@ private struct GeneralSection: View {
     @ObservedObject var controller: MagicController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("通用设置").font(.title2).bold()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("通用设置").font(.title2).bold()
 
-            Toggle("启用魔法线条", isOn: $controller.isEnabled)
-            Toggle("显示识别反馈", isOn: $controller.showRecognitionHUD)
+                Toggle("启用魔法线条", isOn: $controller.isEnabled)
+                Toggle("显示识别反馈", isOn: $controller.showRecognitionHUD)
 
-            Divider()
+                Divider()
 
-            Text("「关闭」图案的动作").font(.headline)
-            Picker("", selection: Binding(
-                get: { controller.closeAction },
-                set: { controller.setCloseAction($0) }
-            )) {
-                ForEach(CloseAction.allCases) { action in
-                    Text(action.title).tag(action)
+                Text("「关闭」图案的动作").font(.headline)
+                Picker("", selection: Binding(
+                    get: { controller.closeAction },
+                    set: { controller.setCloseAction($0) }
+                )) {
+                    ForEach(CloseAction.allCases) { action in
+                        Text(action.title).tag(action)
+                    }
+                }
+                .labelsHidden()
+                Text("识别到「关闭」图案（叉号）时执行上面的动作。图案本身可在「内置图案」里修改。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                Text("启用多笔画").font(.headline)
+                Picker("", selection: Binding(
+                    get: { controller.multiStrokeMode },
+                    set: { controller.setMultiStrokeMode($0) }
+                )) {
+                    ForEach(MultiStrokeMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                Text("该选项会替换原本「单击 Option 单笔画」的逻辑；两种模式互不影响。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                Text("图案播放速度").font(.headline)
+                Picker("", selection: Binding(
+                    get: { controller.playbackSpeed },
+                    set: { controller.setPlaybackSpeed($0) }
+                )) {
+                    ForEach(PlaybackSpeed.options, id: \.self) { speed in
+                        Text(PlaybackSpeed.title(speed)).tag(speed)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Text("点击图案旁的播放按钮时，按该速度演示绘制过程。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                HStack {
+                    Button("导入图案…") { controller.importGestures() }
+                    Button("导出图案…") { controller.exportGestures() }
                 }
             }
-            .labelsHidden()
-            Text("识别到「关闭」图案（叉号）时执行上面的动作。图案本身可在「内置图案」里修改。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            Text("启用多笔画").font(.headline)
-            Picker("", selection: Binding(
-                get: { controller.multiStrokeMode },
-                set: { controller.setMultiStrokeMode($0) }
-            )) {
-                ForEach(MultiStrokeMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.radioGroup)
-            .labelsHidden()
-            Text("该选项会替换原本「单击 Option 单笔画」的逻辑；两种模式互不影响。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            HStack {
-                Button("导入图案…") { controller.importGestures() }
-                Button("导出图案…") { controller.exportGestures() }
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -363,10 +418,11 @@ private struct CustomGestureCard: View {
     let gesture: CustomGesture
     let preview: NSImage?
     let isSelected: Bool
+    let onPlay: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
-            ZStack {
+            ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color(nsColor: .textBackgroundColor))
                 if let preview {
@@ -378,6 +434,14 @@ private struct CustomGestureCard: View {
                         .frame(width: 64, height: 64)
                         .foregroundStyle(.primary)
                 }
+                Button(action: onPlay) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .help("播放图案")
             }
             .frame(height: 84)
             .frame(maxWidth: .infinity)
@@ -389,7 +453,7 @@ private struct CustomGestureCard: View {
 
             Text(gesture.keyDisplay.isEmpty ? "未绑定" : gesture.keyDisplay)
                 .font(.caption)
-                .foregroundStyle(gesture.keyDisplay.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .foregroundStyle(gesture.keyDisplay.isEmpty ? Color.secondary : Color.primary)
                 .lineLimit(1)
         }
         .padding(8)
