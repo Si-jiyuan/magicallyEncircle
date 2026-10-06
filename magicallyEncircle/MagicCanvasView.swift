@@ -58,10 +58,12 @@ final class MagicCanvasView: NSView {
     // MARK: - 绘制输入
 
     func beginStroke(at point: CGPoint, time: TimeInterval) {
-        let stroke = Stroke(points: [point], startTime: time, style: style)
+        // 「随机风格」在每一笔开始时解析成一个具体颜色风格。
+        let resolved = style.resolved()
+        let stroke = Stroke(points: [point], startTime: time, style: resolved)
         strokes.append(stroke)
         current = stroke
-        spawnParticles(at: point, time: time)
+        spawnParticles(at: point, time: time, style: resolved)
         startTimerIfNeeded()
         needsDisplay = true
     }
@@ -72,7 +74,7 @@ final class MagicCanvasView: NSView {
             return
         }
         stroke.points.append(point)
-        spawnParticles(at: point, time: time)
+        spawnParticles(at: point, time: time, style: stroke.style)
         needsDisplay = true
     }
 
@@ -133,7 +135,7 @@ final class MagicCanvasView: NSView {
 
     // MARK: - 粒子
 
-    private func spawnParticles(at point: CGPoint, time: TimeInterval) {
+    private func spawnParticles(at point: CGPoint, time: TimeInterval, style: MagicStyle) {
         let count = Int.random(in: 1...3)
         for _ in 0..<count {
             let angle = Double.random(in: 0..<(2 * Double.pi))
