@@ -10,19 +10,32 @@ protocol InputMonitorDelegate: AnyObject {
     func inputMonitor(_ monitor: InputMonitor, didBeginAt point: CGPoint, at time: TimeInterval)
     func inputMonitor(_ monitor: InputMonitor, didMoveTo point: CGPoint, at time: TimeInterval)
     func inputMonitor(_ monitor: InputMonitor, didEndAt point: CGPoint, at time: TimeInterval)
+    /// 多笔模式下松开 Option 键（此时才应识别合并后的图案）。
+    func inputMonitorDidReleaseModifier(_ monitor: InputMonitor)
 }
 
 /// 使用 CGEventTap 在系统层面监听并「拦截」Option + 鼠标左键事件，
-/// 同时在需要绑定时捕获全局按键。
+/// 同时检测 Option 双击（进入多笔模式）并在需要绑定时捕获全局按键。
 final class InputMonitor {
     weak var delegate: InputMonitorDelegate?
     var isEnabled = true
     var onKeyCaptured: ((UInt16, CGEventFlags) -> Void)?
 
+    /// 当前是否处于「双击 Option 触发的多笔模式」。
+    private(set) var isMultiStrokeSession = false
+
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isDrawing = false
     private var isCapturingKeys = false
+
+    private var optionDown = false
+    private var optionDownTime: TimeInterval = 0
+    private var lastOptionUpTime: TimeInterval = 0
+    private var lastOptionWasTap = false
+
+    private let doubleTapInterval: TimeInterval = 0.4
+    private let tapMaxDuration: TimeInterval = 0.3
 
     @discardableResult
     func start() -> Bool {
@@ -71,6 +84,7 @@ final class InputMonitor {
         runLoopSource = nil
         isDrawing = false
         isCapturingKeys = false
+        isMultiStrokeSession = false
     }
 
     func startKeyCapture() { isCapturingKeys = true }
@@ -96,8 +110,14 @@ final class InputMonitor {
             }
         }
 
-        let modifierHeld = event.flags.contains(.maskAlternate)
         let now = ProcessInfo.processInfo.systemUptime
+
+        if type == .flagsChanged {
+            handleModifierChange(event, now: now)
+            return Unmanaged.passUnretained(event)
+        }
+
+        let modifierHeld = event.flags.contains(.maskAlternate)
 
         switch type {
         case .leftMouseDown:
@@ -122,6 +142,26 @@ final class InputMonitor {
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    /// 检测 Option 的单击 / 双击，双击进入多笔模式。
+    private func handleModifierChange(_ event: CGEvent, now: TimeInterval) {
+        let optionNow = event.flags.contains(.maskAlternate)
+
+        if optionNow, !optionDown {
+            optionDown = true
+            optionDownTime = now
+            let isDoubleTap = lastOptionWasTap && (now - lastOptionUpTime) < doubleTapInterval
+            isMultiStrokeSession = isDoubleTap
+        } else if !optionNow, optionDown {
+            optionDown = false
+            lastOptionWasTap = (now - optionDownTime) < tapMaxDuration
+            lastOptionUpTime = now
+            if isMultiStrokeSession {
+                isMultiStrokeSession = false
+                delegate?.inputMonitorDidReleaseModifier(self)
+            }
+        }
     }
 
     /// 把 CoreGraphics 全局坐标（左上角原点）转换成 AppKit 全局坐标（左下角原点）。

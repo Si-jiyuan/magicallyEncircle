@@ -7,15 +7,17 @@ import CoreGraphics
 import Foundation
 
 /// 一个待匹配的手势候选（内置模板或用户自定义图案）。
+/// 用多笔画表示：单笔画就是只含一个元素的数组。
 struct GestureCandidate {
     let name: String
-    let points: [CGPoint]
+    let strokes: [[CGPoint]]
     let action: GestureAction?
     let customID: UUID?
 }
 
-/// $1 Unistroke Recognizer 的轻量实现（加入反向绘制 + 小幅旋转容错）。
-/// 纯代码模板、无需图片；返回 0...1 的相似度分数，天然支持模糊匹配。
+/// $1 Unistroke Recognizer 的轻量实现（加入反向绘制 + 小幅旋转容错），
+/// 并支持多笔画：每笔独立重采样后做顺序无关的贪心配对，
+/// 因此抬笔跳线不会影响结果，也不要求笔顺。
 final class GestureRecognizer {
     static let shared = GestureRecognizer()
 
@@ -25,23 +27,74 @@ final class GestureRecognizer {
     private init() {}
 
     /// 在候选集合里返回得分最高的一个。
-    func recognize(_ points: [CGPoint], candidates: [GestureCandidate]) -> (candidate: GestureCandidate, score: Double)? {
-        ranked(points, candidates: candidates).first
+    func recognize(_ strokes: [[CGPoint]], candidates: [GestureCandidate]) -> (candidate: GestureCandidate, score: Double)? {
+        ranked(strokes, candidates: candidates).first
     }
 
     /// 返回所有候选的得分（从高到低），用于调试与更精细的判断。
-    func ranked(_ points: [CGPoint], candidates: [GestureCandidate]) -> [(candidate: GestureCandidate, score: Double)] {
-        guard points.count >= 2, !candidates.isEmpty else { return [] }
-        let candidate = GestureRecognizer.preprocess(points, sampleCount: sampleCount, squareSize: squareSize)
+    func ranked(_ strokes: [[CGPoint]], candidates: [GestureCandidate]) -> [(candidate: GestureCandidate, score: Double)] {
+        guard !strokes.isEmpty, !candidates.isEmpty else { return [] }
 
         var ranked: [(GestureCandidate, Double)] = []
         ranked.reserveCapacity(candidates.count)
         for entry in candidates {
-            let processed = GestureRecognizer.preprocess(entry.points, sampleCount: sampleCount, squareSize: squareSize)
-            let score = GestureRecognizer.matchScore(candidate, processed, squareSize: squareSize)
+            let score = GestureRecognizer.matchStrokes(strokes, entry.strokes, sampleCount: sampleCount, squareSize: squareSize)
             ranked.append((entry, score))
         }
         return ranked.sorted { $0.1 > $1.1 }
+    }
+
+    // MARK: - 匹配
+
+    /// 多笔画匹配：单笔对单笔走原 $1，其余走顺序无关的贪心配对。
+    static func matchStrokes(_ a: [[CGPoint]], _ b: [[CGPoint]], sampleCount: Int, squareSize: CGFloat) -> Double {
+        let strokesA = a.filter { $0.count >= 2 && Geometry.pathLength($0) > 0 }
+        let strokesB = b.filter { $0.count >= 2 && Geometry.pathLength($0) > 0 }
+        guard !strokesA.isEmpty, !strokesB.isEmpty else { return 0 }
+
+        if strokesA.count == 1, strokesB.count == 1 {
+            return singleStrokeScore(strokesA[0], strokesB[0], sampleCount: sampleCount, squareSize: squareSize)
+        }
+
+        var used = [Bool](repeating: false, count: strokesB.count)
+        var total: Double = 0
+        for stroke in strokesA {
+            var best = 0.0
+            var bestIndex = -1
+            for index in strokesB.indices where !used[index] {
+                let score = singleStrokeScore(stroke, strokesB[index], sampleCount: sampleCount, squareSize: squareSize)
+                if score > best {
+                    best = score
+                    bestIndex = index
+                }
+            }
+            if bestIndex >= 0 {
+                used[bestIndex] = true
+                total += best
+            }
+        }
+        return total / Double(max(strokesA.count, strokesB.count))
+    }
+
+    /// 单笔试别：预处理 + 反向/旋转容错。
+    static func singleStrokeScore(_ a: [CGPoint], _ b: [CGPoint], sampleCount: Int, squareSize: CGFloat) -> Double {
+        guard a.count >= 2, b.count >= 2 else { return 0 }
+        let processedA = preprocess(a, sampleCount: sampleCount, squareSize: squareSize)
+        let processedB = preprocess(b, sampleCount: sampleCount, squareSize: squareSize)
+        return bestRotatedScore(processedA, processedB, squareSize: squareSize)
+    }
+
+    /// 反向重绘容错 + 小幅旋转容错，取最高分。
+    static func bestRotatedScore(_ candidate: [CGPoint], _ template: [CGPoint], squareSize: CGFloat) -> Double {
+        let variants: [[CGPoint]] = [candidate, Array(candidate.reversed())]
+        var best: Double = 0
+        for variant in variants {
+            for angle in [-10.0, 0.0, 10.0] {
+                let rotated = translateToOrigin(rotate(variant, degrees: angle))
+                best = max(best, score(rotated, template, squareSize: squareSize))
+            }
+        }
+        return best
     }
 
     // MARK: - 预处理
@@ -123,19 +176,6 @@ final class GestureRecognizer {
         let average = sum / CGFloat(a.count)
         let halfDiagonal = 0.5 * hypot(squareSize, squareSize)
         return max(0, 1 - Double(average / halfDiagonal))
-    }
-
-    /// 反向重绘容错 + 小幅旋转容错，取最高分。
-    static func matchScore(_ candidate: [CGPoint], _ template: [CGPoint], squareSize: CGFloat) -> Double {
-        let variants: [[CGPoint]] = [candidate, Array(candidate.reversed())]
-        var best: Double = 0
-        for variant in variants {
-            for angle in [-10.0, 0.0, 10.0] {
-                let rotated = translateToOrigin(rotate(variant, degrees: angle))
-                best = max(best, score(rotated, template, squareSize: squareSize))
-            }
-        }
-        return best
     }
 
     static func rotate(_ points: [CGPoint], degrees: Double) -> [CGPoint] {

@@ -76,9 +76,22 @@ final class MagicCanvasView: NSView {
         needsDisplay = true
     }
 
+    /// 多笔模式下，笔画在识别前保持显示（不淡出）。
+    var pinsStrokes = false
+
     func finishStroke(time: TimeInterval) {
-        current?.endTime = time
+        guard let stroke = current else { return }
+        if !pinsStrokes {
+            stroke.endTime = time
+        }
         current = nil
+    }
+
+    /// 结束多笔会话时，让被固定的笔画开始淡出。
+    func releasePinnedStrokes(time: TimeInterval) {
+        for stroke in strokes where stroke.endTime == nil {
+            stroke.endTime = time
+        }
     }
 
     // MARK: - 动画

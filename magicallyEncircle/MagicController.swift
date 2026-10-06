@@ -37,6 +37,7 @@ final class MagicController: NSObject, ObservableObject {
     private var currentWindow: OverlayWindow?
 
     private var currentPoints: [CGPoint] = []
+    private var multiStrokePoints: [[CGPoint]] = []
     private var strokeClosed = false
     private var holdTimer: Timer?
     private var didCapture = false
@@ -157,14 +158,16 @@ final class MagicController: NSObject, ObservableObject {
         recordingBuiltInID = nil
     }
 
-    private func saveBuiltInOverride(_ id: String, points: [CGPoint]) {
+    private func saveBuiltInOverride(_ id: String, strokes: [[CGPoint]]) {
         recordingBuiltInID = nil
-        guard points.count >= 2, Geometry.pathLength(points) > 30 else {
+        // 内置图案覆盖按单笔样本存储（多笔时合并为一笔）。
+        let merged = strokes.flatMap { $0 }
+        guard merged.count >= 2, Geometry.pathLength(merged) > 30 else {
             showHUD(title: "图案太短", detail: "请重新录制")
             return
         }
         var list = gestureOverrides[id] ?? []
-        list.append(points.map(CodablePoint.init))
+        list.append(merged.map(CodablePoint.init))
         gestureOverrides[id] = list
         overrideStore.save(gestureOverrides)
         let title = BuiltInGesture.find(id)?.title ?? id
@@ -194,16 +197,19 @@ final class MagicController: NSObject, ObservableObject {
         gestureOverrides[id]?.count ?? 0
     }
 
-    private func saveRecordedGesture(_ points: [CGPoint]) {
+    private func saveRecordedGesture(_ strokes: [[CGPoint]]) {
         isRecordingGesture = false
-        guard points.count >= 2, Geometry.pathLength(points) > 30 else {
+        let valid = strokes.filter { $0.count >= 2 }
+        let totalLength = valid.reduce(CGFloat(0)) { $0 + Geometry.pathLength($1) }
+        guard !valid.isEmpty, totalLength > 30 else {
             showHUD(title: "图案太短", detail: "请重新记录")
             return
         }
-        let gesture = CustomGesture(name: "图案\(customGestures.count + 1)", points: points)
+        let gesture = CustomGesture(name: "图案\(customGestures.count + 1)", strokes: valid)
         customGestures.append(gesture)
         persist()
-        showHUD(title: "已保存 \(gesture.name)", detail: "到菜单「自定义手势」绑定快捷键")
+        let kind = valid.count > 1 ? "（\(valid.count) 笔）" : ""
+        showHUD(title: "已保存 \(gesture.name)\(kind)", detail: "到菜单「自定义手势」绑定快捷键")
     }
 
     // MARK: - 快捷键绑定
@@ -290,7 +296,7 @@ final class MagicController: NSObject, ObservableObject {
 
     func previewImage(for gesture: CustomGesture) -> NSImage? {
         if let cached = previewCache[gesture.id] { return cached }
-        guard let image = Self.makePreview(points: gesture.points.map { $0.cgPoint }) else { return nil }
+        guard let image = Self.makePreview(strokes: gesture.strokesCG) else { return nil }
         previewCache[gesture.id] = image
         return image
     }
@@ -343,7 +349,7 @@ final class MagicController: NSObject, ObservableObject {
 
             var count = 0
             for imported in package.gestures {
-                var gesture = CustomGesture(name: uniqueName(imported.name), points: imported.points.map { $0.cgPoint })
+                var gesture = CustomGesture(name: uniqueName(imported.name), strokes: imported.strokesCG)
                 gesture.keyCode = imported.keyCode
                 gesture.modifierFlags = imported.modifierFlags
                 gesture.keyDisplay = imported.keyDisplay
@@ -376,9 +382,12 @@ final class MagicController: NSObject, ObservableObject {
         return "\(base) \(index)"
     }
 
-    private static func makePreview(points: [CGPoint], size: CGFloat = 18) -> NSImage? {
-        guard points.count >= 2 else { return nil }
-        let box = Geometry.boundingBox(points)
+    private static func makePreview(strokes: [[CGPoint]], size: CGFloat = 18) -> NSImage? {
+        let valid = strokes.filter { $0.count >= 2 }
+        let allPoints = valid.flatMap { $0 }
+        guard allPoints.count >= 2 else { return nil }
+
+        let box = Geometry.boundingBox(allPoints)
         let content = size - 4
         let scale = content / max(box.width, box.height, 1)
         let offsetX = 2 + (content - box.width * scale) / 2
@@ -405,22 +414,24 @@ final class MagicController: NSObject, ObservableObject {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
 
-        let path = NSBezierPath()
-        var first = true
-        for point in points {
-            let mapped = NSPoint(x: offsetX + (point.x - box.minX) * scale,
-                                 y: offsetY + (point.y - box.minY) * scale)
-            if first {
-                path.move(to: mapped); first = false
-            } else {
-                path.line(to: mapped)
-            }
-        }
         NSColor.black.setStroke()
-        path.lineWidth = 1.6
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        path.stroke()
+        // 每一笔单独绘制，还原用户实际的画法（抬笔断开）。
+        for stroke in valid {
+            let path = NSBezierPath()
+            for (index, point) in stroke.enumerated() {
+                let mapped = NSPoint(x: offsetX + (point.x - box.minX) * scale,
+                                     y: offsetY + (point.y - box.minY) * scale)
+                if index == 0 {
+                    path.move(to: mapped)
+                } else {
+                    path.line(to: mapped)
+                }
+            }
+            path.lineWidth = 1.6
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            path.stroke()
+        }
 
         NSGraphicsContext.restoreGraphicsState()
 
@@ -453,7 +464,7 @@ final class MagicController: NSObject, ObservableObject {
         // 只有绑定了快捷键的自定义图案才参与匹配；
         // 未绑定的（例如录制备用的样本）不参与，避免挡住内置动作。
         customGestures.filter { $0.keyCode != nil }.map {
-            GestureCandidate(name: $0.name, points: $0.points.map { $0.cgPoint }, action: nil, customID: $0.id)
+            GestureCandidate(name: $0.name, strokes: $0.strokesCG, action: nil, customID: $0.id)
         }
     }
 
@@ -462,25 +473,25 @@ final class MagicController: NSObject, ObservableObject {
         for builtIn in BuiltInGesture.all {
             if let override = gestureOverrides[builtIn.id], !override.isEmpty {
                 for sample in override {
-                    result.append(GestureCandidate(name: builtIn.title, points: sample.map { $0.cgPoint }, action: builtIn.action, customID: nil))
+                    result.append(GestureCandidate(name: builtIn.title, strokes: [sample.map { $0.cgPoint }], action: builtIn.action, customID: nil))
                 }
             } else {
                 for template in builtIn.defaultTemplates {
-                    result.append(GestureCandidate(name: template.name, points: template.points, action: template.action, customID: nil))
+                    result.append(GestureCandidate(name: template.name, strokes: [template.points], action: template.action, customID: nil))
                 }
             }
         }
         return result
     }
 
-    private func handleRecognizedStroke(_ points: [CGPoint]) {
+    private func handleRecognizedStrokes(_ strokes: [[CGPoint]]) {
         let candidates = customCandidates() + builtInCandidates()
-        let ranked = GestureRecognizer.shared.ranked(points, candidates: candidates)
+        let ranked = GestureRecognizer.shared.ranked(strokes, candidates: candidates)
         let ranking = Self.rankingText(ranked)
 
         // 1) 明确的直线滑动优先：直线就该走内置滑动，
-        //    避免被"钩子"之类的自定义图案抢走。
-        if let direction = Geometry.swipeDirection(points),
+        //    避免被"钩子"之类的自定义图案抢走。多笔画不参与滑动判断。
+        if strokes.count == 1, let direction = Geometry.swipeDirection(strokes[0]),
            let builtIn = BuiltInGesture.all.first(where: { $0.defaultSwipe == direction && !hasOverride($0.id) }) {
             performBuiltIn(builtIn.action, extra: "滑动\n\(ranking)")
             return
@@ -649,6 +660,12 @@ extension MagicController: InputMonitorDelegate {
     func inputMonitor(_ monitor: InputMonitor, didBeginAt point: CGPoint, at time: TimeInterval) {
         guard isEnabled, let (window, view) = target(for: point) else { return }
         resetStrokeState()
+        if monitor.isMultiStrokeSession {
+            view.pinsStrokes = true
+        } else {
+            multiStrokePoints.removeAll()
+            view.pinsStrokes = false
+        }
         currentWindow = window
         currentView = view
         currentPoints = [point]
@@ -669,7 +686,8 @@ extension MagicController: InputMonitorDelegate {
         }
 
         currentPoints.append(point)
-        if !isRecordingGesture, recordingBuiltInID == nil, !strokeClosed, Geometry.isClosedLoop(currentPoints) {
+        if !isRecordingGesture, recordingBuiltInID == nil, !monitor.isMultiStrokeSession,
+           !strokeClosed, Geometry.isClosedLoop(currentPoints) {
             strokeClosed = true
             startHoldTimer()
         }
@@ -690,16 +708,42 @@ extension MagicController: InputMonitorDelegate {
         holdTimer = nil
         view.finishStroke(time: time)
 
-        if isRecordingGesture {
-            saveRecordedGesture(currentPoints)
+        if monitor.isMultiStrokeSession {
+            // 多笔模式：本笔先攒着，等松开 Option 再一起识别。
+            if currentPoints.count >= 2 {
+                multiStrokePoints.append(currentPoints)
+            }
+        } else if isRecordingGesture {
+            saveRecordedGesture([currentPoints])
         } else if let builtInID = recordingBuiltInID {
-            saveBuiltInOverride(builtInID, points: currentPoints)
+            saveBuiltInOverride(builtInID, strokes: [currentPoints])
         } else if !didCapture {
-            handleRecognizedStroke(currentPoints)
+            handleRecognizedStrokes([currentPoints])
         }
 
         currentView = nil
         currentWindow = nil
         resetStrokeState()
+    }
+
+    func inputMonitorDidReleaseModifier(_ monitor: InputMonitor) {
+        let strokes = multiStrokePoints
+        multiStrokePoints.removeAll()
+
+        let now = ProcessInfo.processInfo.systemUptime
+        windows.forEach {
+            $0.canvasView.pinsStrokes = false
+            $0.canvasView.releasePinnedStrokes(time: now)
+        }
+
+        guard !strokes.isEmpty else { return }
+
+        if isRecordingGesture {
+            saveRecordedGesture(strokes)
+        } else if let builtInID = recordingBuiltInID {
+            saveBuiltInOverride(builtInID, strokes: strokes)
+        } else {
+            handleRecognizedStrokes(strokes)
+        }
     }
 }
