@@ -59,7 +59,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 600, minHeight: 450)
+        .frame(minWidth: 380, minHeight: 320)
     }
 
     @ViewBuilder
@@ -193,25 +193,20 @@ private struct CustomSection: View {
                 Text("还没有自定义图案。到「记录图案」里画一个吧。")
                     .foregroundStyle(.secondary)
             } else {
-                List(selection: $selected) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 110, maximum: 200), spacing: 12)],
+                    spacing: 12
+                ) {
                     ForEach(controller.customGestures) { gesture in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(gesture.name)
-                                Text(gesture.isMultiStroke ? "多笔画" : "单笔画")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if !gesture.keyDisplay.isEmpty {
-                                Text(gesture.keyDisplay).foregroundStyle(.secondary)
-                            }
-                        }
-                        .tag(Optional(gesture.id))
+                        CustomGestureCard(
+                            gesture: gesture,
+                            preview: controller.previewImage(for: gesture),
+                            isSelected: selected == gesture.id
+                        )
+                        .onTapGesture { selected = gesture.id }
                     }
                 }
-                .frame(height: 200)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
+                .padding(.vertical, 4)
 
                 if let id = selected, let gesture = controller.customGestures.first(where: { $0.id == id }) {
                     HStack {
@@ -359,6 +354,55 @@ private struct RecordSheet: View {
         }
         .padding(20)
         .frame(width: 420)
+    }
+}
+
+// MARK: - 自定义图案卡片
+
+private struct CustomGestureCard: View {
+    let gesture: CustomGesture
+    let preview: NSImage?
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .textBackgroundColor))
+                if let preview {
+                    Image(nsImage: preview)
+                        .renderingMode(.template)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 64, height: 64)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .frame(height: 84)
+            .frame(maxWidth: .infinity)
+
+            Text(gesture.name)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Text(gesture.keyDisplay.isEmpty ? "未绑定" : gesture.keyDisplay)
+                .font(.caption)
+                .foregroundStyle(gesture.keyDisplay.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .lineLimit(1)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.2))
+        )
+        .contentShape(Rectangle())
     }
 }
 
