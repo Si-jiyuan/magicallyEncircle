@@ -26,6 +26,8 @@ struct CustomGesture: Codable, Identifiable {
     var keyCode: UInt16?
     var modifierFlags: UInt64
     var keyDisplay: String
+    /// 绑定的 App（Bundle Identifier，可多个）。与快捷键互斥。
+    var appBundleIDs: [String]?
 
     private var points: [CodablePoint]
     private var multiStrokes: [[CodablePoint]]?
@@ -36,6 +38,7 @@ struct CustomGesture: Codable, Identifiable {
         self.keyCode = nil
         self.modifierFlags = 0
         self.keyDisplay = ""
+        self.appBundleIDs = nil
         self.points = strokes.first?.map(CodablePoint.init) ?? []
         let normalized = strokes.filter { !$0.isEmpty }
         self.multiStrokes = normalized.count > 1 ? normalized.map { $0.map(CodablePoint.init) } : nil
@@ -59,8 +62,16 @@ struct CustomGesture: Codable, Identifiable {
         multiStrokes?.isEmpty == false
     }
 
+    var isShortcutBound: Bool { keyCode != nil }
+
+    var isAppBound: Bool { !(appBundleIDs ?? []).isEmpty }
+
+    var isBound: Bool { isShortcutBound || isAppBound }
+
     var menuTitle: String {
-        keyDisplay.isEmpty ? name : "\(name)（\(keyDisplay)）"
+        if !keyDisplay.isEmpty { return "\(name)（\(keyDisplay)）" }
+        if isAppBound { return "\(name)（App）" }
+        return name
     }
 }
 

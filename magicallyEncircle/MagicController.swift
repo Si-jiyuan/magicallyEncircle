@@ -30,6 +30,7 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var closeAction: CloseAction = CloseAction.current
     @Published private(set) var multiStrokeMode: MultiStrokeMode = MultiStrokeMode.current
     @Published private(set) var playbackSpeed: Double = PlaybackSpeed.current
+    @Published private(set) var launchAtLoginEnabled: Bool = LaunchAtLogin.isEnabled
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
@@ -232,6 +233,81 @@ final class MagicController: NSObject, ObservableObject {
         PlaybackSpeed.current = speed
     }
 
+    func setLaunchAtLogin(_ enabled: Bool) {
+        if LaunchAtLogin.setEnabled(enabled) {
+            launchAtLoginEnabled = enabled
+        } else {
+            launchAtLoginEnabled = LaunchAtLogin.isEnabled
+            showHUD(title: "设置开机自启动失败", detail: "请把 App 放到「应用程序」后再试")
+        }
+    }
+
+    // MARK: - 绑定 App
+
+    func beginAppBinding(_ id: UUID) {
+        guard let gesture = customGestures.first(where: { $0.id == id }), !gesture.isShortcutBound else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = "选择要打开的 App（可多选）"
+        panel.prompt = "绑定"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        guard panel.runModal() == .OK else { return }
+
+        let bundleIDs = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+        bindApps(bundleIDs, to: id)
+    }
+
+    func bindApps(_ bundleIDs: [String], to id: UUID) {
+        guard let index = customGestures.firstIndex(where: { $0.id == id }) else { return }
+        customGestures[index].appBundleIDs = bundleIDs.isEmpty ? nil : bundleIDs
+        customGestures[index].keyCode = nil
+        customGestures[index].modifierFlags = 0
+        customGestures[index].keyDisplay = ""
+        if pendingBindingID == id { cancelPendingBinding() }
+        persist()
+        if !bundleIDs.isEmpty {
+            showHUD(title: customGestures[index].name, detail: "已绑定 \(appNames(bundleIDs))")
+        }
+    }
+
+    func clearBinding(_ id: UUID) {
+        guard let index = customGestures.firstIndex(where: { $0.id == id }) else { return }
+        customGestures[index].appBundleIDs = nil
+        customGestures[index].keyCode = nil
+        customGestures[index].modifierFlags = 0
+        customGestures[index].keyDisplay = ""
+        if pendingBindingID == id { cancelPendingBinding() }
+        persist()
+        showHUD(title: customGestures[index].name, detail: "已清除绑定")
+    }
+
+    func bindingSummary(for gesture: CustomGesture) -> String {
+        if gesture.isShortcutBound { return gesture.keyDisplay }
+        if gesture.isAppBound { return "打开 " + appNames(gesture.appBundleIDs ?? []) }
+        return "未绑定"
+    }
+
+    func appNames(_ bundleIDs: [String]) -> String {
+        let names = bundleIDs.compactMap { id -> String? in
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return nil }
+            let name = FileManager.default.displayName(atPath: url.path)
+            return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+        }
+        return names.isEmpty ? "App" : names.joined(separator: "、")
+    }
+
+    private func openApps(_ bundleIDs: [String]) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        for bundleID in bundleIDs {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        }
+    }
+
     // MARK: - 图案播放
 
     func playBuiltIn(_ id: String) {
@@ -294,7 +370,7 @@ final class MagicController: NSObject, ObservableObject {
     // MARK: - 快捷键绑定
 
     func beginKeyBinding(for id: UUID) {
-        guard customGestures.contains(where: { $0.id == id }) else { return }
+        guard let gesture = customGestures.first(where: { $0.id == id }), !gesture.isAppBound else { return }
         isRecordingGesture = false
         pendingBindingID = id
         pendingKeyCode = nil
@@ -312,6 +388,7 @@ final class MagicController: NSObject, ObservableObject {
         customGestures[index].keyCode = keyCode
         customGestures[index].modifierFlags = pendingModifiers.rawValue
         customGestures[index].keyDisplay = pendingKeyDisplay ?? ""
+        customGestures[index].appBundleIDs = nil
         persist()
 
         let name = customGestures[index].name
@@ -540,9 +617,9 @@ final class MagicController: NSObject, ObservableObject {
     }
 
     private func customCandidates() -> [GestureCandidate] {
-        // 只有绑定了快捷键的自定义图案才参与匹配；
+        // 只有「已绑定」（快捷键或 App）的自定义图案才参与匹配；
         // 未绑定的（例如录制备用的样本）不参与，避免挡住内置动作。
-        customGestures.filter { $0.keyCode != nil }.map {
+        customGestures.filter { $0.isBound }.map {
             GestureCandidate(name: $0.name, strokes: $0.strokesCG, action: nil, customID: $0.id)
         }
     }
@@ -615,8 +692,17 @@ final class MagicController: NSObject, ObservableObject {
 
     private func performCustomGesture(_ id: UUID, score: Double, ranking: String = "") {
         guard let gesture = customGestures.first(where: { $0.id == id }) else { return }
+        let percent = Int((score * 100).rounded())
+
+        if gesture.isAppBound {
+            let ids = gesture.appBundleIDs ?? []
+            openApps(ids)
+            showHUD(title: gesture.name, detail: "打开 \(appNames(ids)) · 匹配 \(percent)%")
+            return
+        }
+
         guard let keyCode = gesture.keyCode else {
-            showHUD(title: gesture.name, detail: "未绑定快捷键")
+            showHUD(title: gesture.name, detail: "未绑定")
             return
         }
         let shortcut = KeyShortcut(
@@ -625,7 +711,7 @@ final class MagicController: NSObject, ObservableObject {
             display: gesture.keyDisplay
         )
         shortcut.send()
-        let head = "\(gesture.keyDisplay) · 匹配 \(Int((score * 100).rounded()))%"
+        let head = "\(gesture.keyDisplay) · 匹配 \(percent)%"
         showHUD(title: gesture.name, detail: ranking.isEmpty ? head : "\(head)\n\(ranking)")
     }
 

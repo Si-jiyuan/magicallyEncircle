@@ -219,6 +219,7 @@ private struct CustomSection: View {
                             CustomGestureCard(
                                 gesture: gesture,
                                 preview: controller.previewImage(for: gesture),
+                                bindingText: controller.bindingSummary(for: gesture),
                                 isSelected: selected == gesture.id,
                                 onPlay: { controller.playCustomGesture(gesture.id) }
                             )
@@ -242,6 +243,11 @@ private struct CustomSection: View {
                 HStack {
                     Button("重命名…") { controller.renameGesture(id) }
                     Button("设置快捷键") { controller.beginKeyBinding(for: id) }
+                        .disabled(gesture.isAppBound)
+                    Button("绑定 App…") { controller.beginAppBinding(id) }
+                        .disabled(gesture.isShortcutBound)
+                    Button("清除绑定") { controller.clearBinding(id) }
+                        .disabled(!gesture.isBound)
                     Button("删除") {
                         controller.deleteGesture(id)
                         selected = nil
@@ -258,11 +264,17 @@ private struct CustomSection: View {
                         }
                         Button("取消") { controller.cancelPendingBinding() }
                     }
-                } else if !gesture.keyDisplay.isEmpty {
-                    Text("当前快捷键：\(gesture.keyDisplay)").font(.caption).foregroundStyle(.secondary)
+                } else if gesture.isBound {
+                    Text("当前绑定：\(controller.bindingSummary(for: gesture))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("尚未绑定：可「设置快捷键」或「绑定 App（可多选）」。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             } else {
-                Text("点击上方图案以设置快捷键或重命名。").font(.caption).foregroundStyle(.secondary)
+                Text("点击上方图案以设置快捷键、绑定 App 或重命名。").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(10)
@@ -321,6 +333,10 @@ private struct GeneralSection: View {
 
                 Toggle("启用魔法线条", isOn: $controller.isEnabled)
                 Toggle("显示识别反馈", isOn: $controller.showRecognitionHUD)
+                Toggle("开机自启动", isOn: Binding(
+                    get: { controller.launchAtLoginEnabled },
+                    set: { controller.setLaunchAtLogin($0) }
+                ))
 
                 Divider()
 
@@ -417,6 +433,7 @@ private struct RecordSheet: View {
 private struct CustomGestureCard: View {
     let gesture: CustomGesture
     let preview: NSImage?
+    let bindingText: String
     let isSelected: Bool
     let onPlay: () -> Void
 
@@ -451,10 +468,11 @@ private struct CustomGestureCard: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Text(gesture.keyDisplay.isEmpty ? "未绑定" : gesture.keyDisplay)
+            Text(bindingText)
                 .font(.caption)
-                .foregroundStyle(gesture.keyDisplay.isEmpty ? Color.secondary : Color.primary)
+                .foregroundStyle(gesture.isBound ? Color.primary : Color.secondary)
                 .lineLimit(1)
+                .truncationMode(.middle)
         }
         .padding(8)
         .frame(maxWidth: .infinity)
