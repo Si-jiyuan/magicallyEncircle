@@ -30,7 +30,8 @@ struct BuiltInGesture: Identifiable {
         BuiltInGesture(id: "paste", title: "粘贴", action: .paste, defaultSwipe: nil, defaultSamples: samples(for: .paste)),
         BuiltInGesture(id: "newTab", title: "新建标签页", action: .newTab, defaultSwipe: nil, defaultSamples: samples(for: .newTab)),
         BuiltInGesture(id: "lockScreen", title: "锁定屏幕", action: .lockScreen, defaultSwipe: nil, defaultSamples: samples(for: .lockScreen)),
-        BuiltInGesture(id: "close", title: "关闭", action: .close, defaultSwipe: nil, defaultSamples: [closeUserDrawn, closeSimple])
+        BuiltInGesture(id: "close", title: "关闭", action: .close, defaultSwipe: nil, defaultSamples: [closeUserDrawn, closeSimple]),
+        BuiltInGesture(id: "share", title: "共享", action: .share, defaultSwipe: nil, defaultSamples: [shareUserDrawn])
     ]
 
     static func find(_ id: String) -> BuiltInGesture? {
@@ -51,5 +52,10 @@ struct BuiltInGesture: Identifiable {
     private static let closeSimple: [[CGPoint]] = [
         [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 80)],
         [CGPoint(x: 80, y: 20), CGPoint(x: 20, y: 80)]
+    ]
+
+    /// 用户亲手绘制的「共享」图案（单笔）。
+    private static let shareUserDrawn: [[CGPoint]] = [
+        [CGPoint(x: -581.7, y: 596.6), CGPoint(x: -599.1, y: 604.2), CGPoint(x: -617.2, y: 610.0), CGPoint(x: -635.8, y: 613.5), CGPoint(x: -654.3, y: 612.0), CGPoint(x: -671.8, y: 604.6), CGPoint(x: -688.8, y: 596.3), CGPoint(x: -702.3, y: 583.3), CGPoint(x: -705.1, y: 564.8), CGPoint(x: -699.3, y: 546.9), CGPoint(x: -687.6, y: 531.9), CGPoint(x: -674.0, y: 518.7), CGPoint(x: -660.2, y: 505.6), CGPoint(x: -647.1, y: 491.9), CGPoint(x: -634.8, y: 477.4), CGPoint(x: -623.2, y: 462.4), CGPoint(x: -613.1, y: 446.3), CGPoint(x: -610.6, y: 427.6), CGPoint(x: -618.4, y: 410.6), CGPoint(x: -632.2, y: 397.9), CGPoint(x: -648.6, y: 388.5), CGPoint(x: -666.7, y: 382.9), CGPoint(x: -685.4, y: 380.5), CGPoint(x: -704.4, y: 379.5), CGPoint(x: -723.4, y: 380.5), CGPoint(x: -741.5, y: 385.9), CGPoint(x: -759.4, y: 392.5), CGPoint(x: -776.2, y: 401.4)]
     ]
 }

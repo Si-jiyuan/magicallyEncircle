@@ -108,6 +108,7 @@ enum GestureAction: CaseIterable {
     case lockScreen
     case showDesktop
     case close
+    case share
 
     var title: String {
         switch self {
@@ -122,6 +123,7 @@ enum GestureAction: CaseIterable {
         case .lockScreen: return "锁定屏幕"
         case .showDesktop: return "显示桌面"
         case .close: return "关闭"
+        case .share: return "共享"
         }
     }
 
@@ -138,10 +140,18 @@ enum GestureAction: CaseIterable {
         case .lockScreen: return KeyShortcut(keyCode: 12, flags: [.maskControl, .maskCommand], display: "⌃⌘Q")
         case .showDesktop: return KeyShortcut(keyCode: 103, flags: [], display: "F11")
         case .close: return CloseAction.current.shortcut
+        case .share: return nil
         }
     }
 
     func perform() {
+        if self == .share {
+            // AppleScript + 模态菜单较慢，必须离开事件回调后再执行。
+            DispatchQueue.main.async {
+                ShareMenuPresenter.shared.shareSelectedFiles()
+            }
+            return
+        }
         shortcut?.send()
     }
 }
