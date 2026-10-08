@@ -161,3 +161,14 @@ magicallyEncircle/
 - 系统级快捷键（如 Mission Control）是通过专用通道触发的；仅合成普通键盘事件对它们无效
 - 「显示桌面」默认没有图案，需要自行录制或绑定快捷键
 - 图案播放默认在**当前鼠标所在屏幕居中**演示（原始坐标可能已不在屏内）
+
+---
+
+## ☕ 支持作者
+
+如果这个项目对你有帮助，欢迎请我喝杯咖啡：
+
+<p align="center">
+  <img src="Assets/buyMeCoffee/wechat.jpg" width="200" alt="微信赞赏" />
+  <img src="Assets/buyMeCoffee/alipay.jpg" width="200" alt="支付宝赞赏" />
+</p>

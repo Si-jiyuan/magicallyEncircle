@@ -36,13 +36,18 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
 }
 
+/// 设置窗口的选中栏目（供窗口标题联动）。
+final class SettingsState: ObservableObject {
+    @Published var section: SettingsSection = .general
+}
+
 struct SettingsView: View {
     @ObservedObject var controller: MagicController
-    @State private var section: SettingsSection = .general
+    @ObservedObject var state: SettingsState
 
     var body: some View {
         HStack(spacing: 0) {
-            List(selection: $section) {
+            List(selection: $state.section) {
                 ForEach(SettingsSection.allCases) { item in
                     Label(item.title, systemImage: item.icon).tag(item)
                 }
@@ -61,7 +66,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var detail: some View {
-        switch section {
+        switch state.section {
         case .general: GeneralSection(controller: controller)
         case .style: StyleSection(controller: controller)
         case .builtIn: BuiltInSection(controller: controller)
@@ -325,6 +330,7 @@ private struct RecordSection: View {
 
 private struct GeneralSection: View {
     @ObservedObject var controller: MagicController
+    @State private var showCoffee = false
 
     var body: some View {
         ScrollView {
@@ -394,8 +400,55 @@ private struct GeneralSection: View {
                     Button("导入图案…") { controller.importGestures() }
                     Button("导出图案…") { controller.exportGestures() }
                 }
+
+                HStack(spacing: 4) {
+                    Text("Made With By 💌").foregroundStyle(.secondary)
+                    Link("Si-Jiyuan", destination: URL(string: "https://www.xiaohongshu.com/user/profile/60046a230000000001004f31?xsec_token=YBLDwnjN2eGZx9O3CXGjM4vs9CoMKtL-HD7O6KLqU35tM=&xsec_source=app_share&xhsshare=CopyLink&shareRedId=ODYyNDlGNjw2NzUyOTgwNjY0OTc4Szk6&apptime=1791476230&share_id=3aa2798892c24177b928812d98c4eb6d")!)
+                }
+                .font(.caption)
+
+                Button("Buy Me A Coffee Pleeeeeease 🥺") { showCoffee = true }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .popover(isPresented: $showCoffee, arrowEdge: .bottom) {
+                        CoffeePopover()
+                    }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - 收款码弹窗
+
+private struct CoffeePopover: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("Buy Me A Coffee ☕️").font(.headline)
+            HStack(spacing: 16) {
+                qr("buyme_wechat", "微信")
+                qr("buyme_alipay", "支付宝")
+            }
+        }
+        .padding(20)
+    }
+
+    @ViewBuilder
+    private func qr(_ name: String, _ title: String) -> some View {
+        VStack(spacing: 6) {
+            if let image = Bundle.main.image(forResource: name) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 200, height: 260)
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(width: 200, height: 260)
+                    .overlay(Text("图片缺失").foregroundStyle(.secondary))
+            }
+            Text(title).font(.caption).foregroundStyle(.secondary)
         }
     }
 }
