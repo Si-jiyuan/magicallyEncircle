@@ -1,9 +1,8 @@
 <p align="center">
   <img src="Assets/icon/icon.png" width="160" alt="magicallyEncircle app icon" />
- 	<h1 style="text-align: center">
-  magicallyEncircle  
-  </h1>
 </p>
+
+<h1 align="center">magicallyEncircle</h1>
 
 在 Mac 屏幕上用「魔法画笔」画出图案来触发快捷键、圈选复制/截图的菜单栏小工具。
 
