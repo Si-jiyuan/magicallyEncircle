@@ -1,5 +1,9 @@
 # magicallyEncircle
 
+<p align="center">
+  <img src="Assets/icon/icon.png" width="160" alt="magicallyEncircle app icon" />
+</p>
+
 在 Mac 屏幕上用「魔法画笔」画出图案来触发快捷键、圈选复制/截图的菜单栏小工具。
 
 - 按住 **Option + 鼠标左键拖动**即可在任意界面之上绘制发光的魔法线条
