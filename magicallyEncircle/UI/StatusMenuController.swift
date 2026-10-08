@@ -96,7 +96,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
         submenu.addItem(.separator())
 
-        let note = NSMenuItem(title: "○ 闭环快松=复制文本 / 按住2秒=截图（不可改）", action: nil, keyEquivalent: "")
+        let note = NSMenuItem(title: "○ 闭环快松=复制文本 / 按住1秒=截图（不可改）", action: nil, keyEquivalent: "")
         note.isEnabled = false
         submenu.addItem(note)
 

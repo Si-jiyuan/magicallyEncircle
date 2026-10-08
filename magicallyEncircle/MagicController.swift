@@ -52,7 +52,7 @@ final class MagicController: NSObject, ObservableObject {
     private var pendingModifiers: CGEventFlags = []
     private var previewCache: [UUID: NSImage] = [:]
 
-    private let holdDuration: TimeInterval = 2.0
+    private let holdDuration: TimeInterval = 1.0
     private let symbolThreshold: Double = 0.72
     private let customThreshold: Double = 0.75
 
@@ -873,7 +873,8 @@ extension MagicController: InputMonitorDelegate {
         }
 
         currentPoints.append(point)
-        if !isRecordingGesture, recordingBuiltInID == nil, !monitor.isMultiStrokeSession,
+        // 闭合圈检测在两种多笔模式下都生效（圈选复制/截图是独立手势）。
+        if !isRecordingGesture, recordingBuiltInID == nil,
            !strokeClosed, Geometry.isClosedLoop(currentPoints) {
             strokeClosed = true
             startHoldTimer()
@@ -895,16 +896,20 @@ extension MagicController: InputMonitorDelegate {
         holdTimer = nil
         view.finishStroke(time: time)
 
-        if monitor.isMultiStrokeSession {
-            // 多笔模式：本笔先攒着，等松开 Option 再一起识别。
-            if currentPoints.count >= 2 {
+        if didCapture {
+            // 已在按住期间完成截图。
+        } else if monitor.isMultiStrokeSession {
+            // 多笔模式：闭合圈仍按「圈选复制」处理；其余笔画先攒着，等松开 Option 再识别。
+            if strokeClosed {
+                performLassoCopy()
+            } else if currentPoints.count >= 2 {
                 multiStrokePoints.append(currentPoints)
             }
         } else if isRecordingGesture {
             saveRecordedGesture([currentPoints])
         } else if let builtInID = recordingBuiltInID {
             saveBuiltInOverride(builtInID, strokes: [currentPoints])
-        } else if !didCapture {
+        } else {
             handleRecognizedStrokes([currentPoints])
         }
 
