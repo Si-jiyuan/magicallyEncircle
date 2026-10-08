@@ -31,6 +31,7 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var multiStrokeMode: MultiStrokeMode = MultiStrokeMode.current
     @Published private(set) var playbackSpeed: Double = PlaybackSpeed.current
     @Published private(set) var launchAtLoginEnabled: Bool = LaunchAtLogin.isEnabled
+    @Published private(set) var autoCheckUpdates: Bool = UpdateChecker.autoCheckEnabled
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
@@ -86,6 +87,10 @@ final class MagicController: NSObject, ObservableObject {
             }
         } else {
             showHUD(title: "magicallyEncircle 已启动", detail: "按住 Option 拖动开始绘制")
+        }
+
+        if autoCheckUpdates {
+            UpdateChecker.shared.check(manual: false)
         }
     }
 
@@ -231,6 +236,15 @@ final class MagicController: NSObject, ObservableObject {
     func setPlaybackSpeed(_ speed: Double) {
         playbackSpeed = speed
         PlaybackSpeed.current = speed
+    }
+
+    func setAutoCheckUpdates(_ enabled: Bool) {
+        autoCheckUpdates = enabled
+        UpdateChecker.autoCheckEnabled = enabled
+    }
+
+    func checkForUpdates() {
+        UpdateChecker.shared.check(manual: true)
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {

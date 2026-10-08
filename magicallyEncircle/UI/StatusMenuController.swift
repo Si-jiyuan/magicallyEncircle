@@ -64,6 +64,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(actionItem("导入自定义图案…", #selector(importGestures)))
         menu.addItem(.separator())
         menu.addItem(actionItem("设置…", #selector(openSettings)))
+        menu.addItem(actionItem("检查更新…", #selector(checkUpdates)))
         menu.addItem(.separator())
         let quit = actionItem("退出", #selector(quit), keyEquivalent: "q")
         menu.addItem(quit)
@@ -235,6 +236,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func cancelBinding() { controller.cancelPendingBinding() }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func openSettings() { SettingsWindowController.shared.show() }
+    @objc private func checkUpdates() { controller.checkForUpdates() }
 
     @objc private func selectStyle(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let style = MagicStyle(rawValue: raw) else { return }

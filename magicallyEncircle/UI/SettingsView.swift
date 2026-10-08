@@ -343,6 +343,10 @@ private struct GeneralSection: View {
                     get: { controller.launchAtLoginEnabled },
                     set: { controller.setLaunchAtLogin($0) }
                 ))
+                Toggle("启动时检查更新", isOn: Binding(
+                    get: { controller.autoCheckUpdates },
+                    set: { controller.setAutoCheckUpdates($0) }
+                ))
 
                 Divider()
 

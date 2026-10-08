@@ -103,6 +103,33 @@
 
 ---
 
+## 安装
+
+安装Homebrew的用户可使用以下命令快捷安装😉
+
+```bash
+brew tap Si-jiyuan/tap
+brew install --cask magically-encircle
+```
+
+或单独执行
+
+```bash
+brew install --cask Si-jiyuan/tap/magicline
+```
+
+###   手动安装
+
+从 [Releases](https://github.com/Si-jiyuan/magicallyEncircle/releases) 下载 `magicallyEncircle.dmg`，打开后把 App 拖到「应用程序」。
+
+---
+
+## 更新
+
+- 启动时自动检查更新（可在「设置 → 通用设置 → 启动时检查更新」关闭）；菜单栏也有「检查更新…」
+
+---
+
 ## 构建与打包
 
 ```bash
@@ -115,8 +142,6 @@ xcodebuild -project magicallyEncircle.xcodeproj -scheme magicallyEncircle \
 UNSIGNED=1 ./scripts/build_dmg.sh   # 不签名（本机自用）
 # 产物：.build/magicallyEncircle.dmg
 ```
-
-分享给他人且不想弹 Gatekeeper 警告，需要 Developer ID 签名 + 公证（`notarytool` + `stapler`）。
 
 ---
 
