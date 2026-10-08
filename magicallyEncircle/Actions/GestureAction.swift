@@ -26,6 +26,32 @@ struct KeyShortcut {
         }
     }
 
+    /// 依次发送多个快捷键（如「关闭当前窗口」需要 ⌥⌘W 后再 ⌘W）。
+    static func sendSequence(_ shortcuts: [KeyShortcut], interval: TimeInterval = 0.2) {
+        guard !shortcuts.isEmpty else { return }
+        DispatchQueue.main.async {
+            whenModifiersReleased {
+                for (index, shortcut) in shortcuts.enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + interval * Double(index)) {
+                        post(keyCode: shortcut.keyCode, flags: shortcut.flags)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 等物理修饰键释放后执行闭包（用于自定义时序/判断）。
+    static func afterModifiersReleased(_ body: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            whenModifiersReleased(body)
+        }
+    }
+
+    /// 立即发送该快捷键（调用方需保证修饰键状态合适）。
+    static func postImmediately(_ shortcut: KeyShortcut) {
+        post(keyCode: shortcut.keyCode, flags: shortcut.flags)
+    }
+
     static func postSynthetic(keyCode: CGKeyCode, flags: CGEventFlags) {
         DispatchQueue.main.async {
             // 用户是按住 Option 画图的，松手后 Option 可能仍被按住，
@@ -145,13 +171,18 @@ enum GestureAction: CaseIterable {
     }
 
     func perform() {
-        if self == .share {
+        switch self {
+        case .share:
             // AppleScript + 模态菜单较慢，必须离开事件回调后再执行。
             DispatchQueue.main.async {
                 ShareMenuPresenter.shared.shareSelectedFiles()
             }
-            return
+        case .close:
+            DispatchQueue.main.async {
+                CloseAction.current.perform()
+            }
+        default:
+            shortcut?.send()
         }
-        shortcut?.send()
     }
 }
