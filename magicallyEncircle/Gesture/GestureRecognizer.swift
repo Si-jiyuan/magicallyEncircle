@@ -46,7 +46,8 @@ final class GestureRecognizer {
 
     // MARK: - 匹配
 
-    /// 多笔画匹配：单笔对单笔走原 $1，其余走顺序无关的贪心配对。
+    /// 多笔画匹配：单笔对单笔走原 $1；
+    /// 其余 = 逐笔形状匹配（顺序无关） + 整体点云匹配（考虑笔画间的相对位置/交叉关系）。
     static func matchStrokes(_ a: [[CGPoint]], _ b: [[CGPoint]], sampleCount: Int, squareSize: CGFloat) -> Double {
         let strokesA = a.filter { $0.count >= 2 && Geometry.pathLength($0) > 0 }
         let strokesB = b.filter { $0.count >= 2 && Geometry.pathLength($0) > 0 }
@@ -56,6 +57,14 @@ final class GestureRecognizer {
             return singleStrokeScore(strokesA[0], strokesB[0], sampleCount: sampleCount, squareSize: squareSize)
         }
 
+        // 整体关系权重更高，避免「两笔斜线」与「交叉的叉号」这类误判。
+        let shape = greedyStrokeScore(strokesA, strokesB, sampleCount: sampleCount, squareSize: squareSize)
+        let arrangement = cloudScore(strokesA, strokesB, sampleCount: sampleCount, squareSize: squareSize)
+        return shape * 0.35 + arrangement * 0.65
+    }
+
+    /// 顺序无关的逐笔贪心形状匹配。
+    static func greedyStrokeScore(_ strokesA: [[CGPoint]], _ strokesB: [[CGPoint]], sampleCount: Int, squareSize: CGFloat) -> Double {
         var used = [Bool](repeating: false, count: strokesB.count)
         var total: Double = 0
         for stroke in strokesA {
@@ -74,6 +83,56 @@ final class GestureRecognizer {
             }
         }
         return total / Double(max(strokesA.count, strokesB.count))
+    }
+
+    /// 把所有笔画点合并成点云后整体匹配，能区分「交叉」与「分开」等相对关系。
+    static func cloudScore(_ strokesA: [[CGPoint]], _ strokesB: [[CGPoint]], sampleCount: Int, squareSize: CGFloat) -> Double {
+        let cloudA = cloudPoints(strokesA, perStroke: sampleCount / 2)
+        let cloudB = cloudPoints(strokesB, perStroke: sampleCount / 2)
+        guard !cloudA.isEmpty, !cloudB.isEmpty else { return 0 }
+
+        let normalizedA = translateToOrigin(scaleToSquare(cloudA, size: squareSize))
+        let normalizedB = translateToOrigin(scaleToSquare(cloudB, size: squareSize))
+
+        let forward = greedyCloudDistance(normalizedA, normalizedB, squareSize: squareSize)
+        let backward = greedyCloudDistance(normalizedB, normalizedA, squareSize: squareSize)
+        return (forward + backward) / 2
+    }
+
+    /// 每笔各自重采样后合并（不插值抬笔跳线），保留笔画点分布。
+    static func cloudPoints(_ strokes: [[CGPoint]], perStroke: Int) -> [CGPoint] {
+        var points: [CGPoint] = []
+        for stroke in strokes where stroke.count >= 2 {
+            points.append(contentsOf: resample(stroke, count: max(2, perStroke)))
+        }
+        return points
+    }
+
+    static func greedyCloudDistance(_ a: [CGPoint], _ b: [CGPoint], squareSize: CGFloat) -> Double {
+        guard !a.isEmpty, !b.isEmpty else { return 0 }
+        var used = [Bool](repeating: false, count: b.count)
+        var sum: CGFloat = 0
+        var matched = 0
+        for point in a {
+            var best = CGFloat.greatestFiniteMagnitude
+            var bestIndex = -1
+            for index in b.indices where !used[index] {
+                let distance = Geometry.distance(point, b[index])
+                if distance < best {
+                    best = distance
+                    bestIndex = index
+                }
+            }
+            if bestIndex >= 0 {
+                used[bestIndex] = true
+                sum += best
+                matched += 1
+            }
+        }
+        guard matched > 0 else { return 0 }
+        let average = sum / CGFloat(matched)
+        let halfDiagonal = 0.5 * hypot(squareSize, squareSize)
+        return max(0, 1 - Double(average / halfDiagonal))
     }
 
     /// 单笔试别：预处理 + 反向/旋转容错。
