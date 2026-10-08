@@ -270,7 +270,7 @@ final class MagicController: NSObject, ObservableObject {
         if pendingBindingID == id { cancelPendingBinding() }
         persist()
         if !bundleIDs.isEmpty {
-            showHUD(title: customGestures[index].name, detail: "已绑定 \(appNames(bundleIDs))")
+            showHUD(title: customGestures[index].name, detail: "已绑定 " + bundleIDs.map(appDisplayName).joined(separator: "、"))
         }
     }
 
@@ -287,25 +287,40 @@ final class MagicController: NSObject, ObservableObject {
 
     func bindingSummary(for gesture: CustomGesture) -> String {
         if gesture.isShortcutBound { return gesture.keyDisplay }
-        if gesture.isAppBound { return "打开 " + appNames(gesture.appBundleIDs ?? []) }
+        if gesture.isAppBound {
+            return "打开 " + (gesture.appBundleIDs ?? []).map(appDisplayName).joined(separator: "、")
+        }
         return "未绑定"
     }
 
-    func appNames(_ bundleIDs: [String]) -> String {
-        let names = bundleIDs.compactMap { id -> String? in
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return nil }
-            let name = FileManager.default.displayName(atPath: url.path)
-            return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+    /// App 的展示名；找不到（已卸载）时回退为 Bundle Identifier。
+    func appDisplayName(_ bundleID: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return bundleID
         }
-        return names.isEmpty ? "App" : names.joined(separator: "、")
+        let name = FileManager.default.displayName(atPath: url.path)
+        return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
     }
 
-    private func openApps(_ bundleIDs: [String]) {
+    /// 打开 App。已运行则激活（无窗口时由系统 reopen 打开一个窗口）；
+    /// 返回成功打开与「不存在」的 bundle id。
+    private func openApps(_ bundleIDs: [String]) -> (opened: [String], missing: [String]) {
+        var opened: [String] = []
+        var missing: [String] = []
+
         let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = false
+
         for bundleID in bundleIDs {
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+                missing.append(bundleID)
+                continue
+            }
             NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            opened.append(bundleID)
         }
+        return (opened, missing)
     }
 
     // MARK: - 图案播放
@@ -696,8 +711,14 @@ final class MagicController: NSObject, ObservableObject {
 
         if gesture.isAppBound {
             let ids = gesture.appBundleIDs ?? []
-            openApps(ids)
-            showHUD(title: gesture.name, detail: "打开 \(appNames(ids)) · 匹配 \(percent)%")
+            let (opened, missing) = openApps(ids)
+            if showRecognitionHUD {
+                var parts: [String] = []
+                if !opened.isEmpty { parts.append("打开 " + opened.map(appDisplayName).joined(separator: "、")) }
+                if !missing.isEmpty { parts.append(missing.map(appDisplayName).joined(separator: "、") + " 不存在") }
+                parts.append("匹配 \(percent)%")
+                showHUD(title: gesture.name, detail: parts.joined(separator: " · "))
+            }
             return
         }
 
