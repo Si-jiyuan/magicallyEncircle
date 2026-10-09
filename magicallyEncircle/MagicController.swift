@@ -22,8 +22,11 @@ final class MagicController: NSObject, ObservableObject {
         didSet { monitor.isEnabled = isEnabled }
     }
 
-    @Published var style: MagicStyle = .whiteOrange {
-        didSet { applyStyle() }
+    @Published var style: MagicStyle = MagicStyle.current {
+        didSet {
+            applyStyle()
+            MagicStyle.current = style
+        }
     }
 
     @Published var showRecognitionHUD: Bool = true

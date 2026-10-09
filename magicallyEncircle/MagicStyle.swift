@@ -19,6 +19,14 @@ enum MagicStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    private static let key = "magicallyEncircle.visualStyle"
+
+    /// 用户选择的风格（持久化）。
+    static var current: MagicStyle {
+        get { MagicStyle(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .whiteOrange }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+
     /// 除「随机」外的具体颜色风格。
     static var concreteStyles: [MagicStyle] {
         allCases.filter { $0 != .random }
