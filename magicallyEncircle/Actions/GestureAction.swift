@@ -132,6 +132,7 @@ enum GestureAction: CaseIterable {
     case paste
     case newTab
     case lockScreen
+    case delete
     case showDesktop
     case close
     case share
@@ -149,6 +150,7 @@ enum GestureAction: CaseIterable {
         case .paste: return "粘贴"
         case .newTab: return "新建标签页"
         case .lockScreen: return "锁定屏幕"
+        case .delete: return "删除"
         case .showDesktop: return "显示桌面"
         case .close: return "关闭"
         case .share: return "共享"
@@ -167,6 +169,7 @@ enum GestureAction: CaseIterable {
         case .copy: return KeyShortcut(keyCode: 8, flags: .maskCommand, display: "⌘C")
         case .paste: return KeyShortcut(keyCode: 9, flags: .maskCommand, display: "⌘V")
         case .newTab: return KeyShortcut(keyCode: 17, flags: .maskCommand, display: "⌘T")
+        case .delete: return KeyShortcut(keyCode: 51, flags: .maskCommand, display: "⌘⌫")
         case .lockScreen: return KeyShortcut(keyCode: 12, flags: [.maskControl, .maskCommand], display: "⌃⌘Q")
         case .showDesktop: return KeyShortcut(keyCode: 103, flags: [], display: "F11")
         case .close: return CloseAction.current.shortcut

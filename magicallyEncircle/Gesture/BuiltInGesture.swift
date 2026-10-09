@@ -30,10 +30,11 @@ struct BuiltInGesture: Identifiable {
         BuiltInGesture(id: "paste", title: "粘贴", action: .paste, defaultSwipe: nil, defaultSamples: samples(for: .paste)),
         BuiltInGesture(id: "newTab", title: "新建标签页", action: .newTab, defaultSwipe: nil, defaultSamples: samples(for: .newTab)),
         BuiltInGesture(id: "lockScreen", title: "锁定屏幕", action: .lockScreen, defaultSwipe: nil, defaultSamples: samples(for: .lockScreen)),
-        BuiltInGesture(id: "close", title: "关闭", action: .close, defaultSwipe: nil, defaultSamples: [closeUserDrawn, closeSimple]),
-        BuiltInGesture(id: "share", title: "共享", action: .share, defaultSwipe: nil, defaultSamples: [shareUserDrawn]),
+        BuiltInGesture(id: "delete", title: "删除", action: .delete, defaultSwipe: nil, defaultSamples: [deleteSample]),
         BuiltInGesture(id: "spaceLeft", title: "向左切换桌面", action: .switchSpaceLeft, defaultSwipe: nil, defaultSamples: [spaceLeftSample]),
-        BuiltInGesture(id: "spaceRight", title: "向右切换桌面", action: .switchSpaceRight, defaultSwipe: nil, defaultSamples: [spaceRightSample])
+        BuiltInGesture(id: "spaceRight", title: "向右切换桌面", action: .switchSpaceRight, defaultSwipe: nil, defaultSamples: [spaceRightSample]),
+        BuiltInGesture(id: "share", title: "共享", action: .share, defaultSwipe: nil, defaultSamples: [shareUserDrawn]),
+        BuiltInGesture(id: "close", title: "关闭", action: .close, defaultSwipe: nil, defaultSamples: [closeUserDrawn, closeSimple])
     ]
 
     static func find(_ id: String) -> BuiltInGesture? {
@@ -54,6 +55,11 @@ struct BuiltInGesture: Identifiable {
     private static let closeSimple: [[CGPoint]] = [
         [CGPoint(x: 20, y: 20), CGPoint(x: 80, y: 80)],
         [CGPoint(x: 80, y: 20), CGPoint(x: 20, y: 80)]
+    ]
+
+    /// 用户亲手绘制的「删除」图案（单笔，⌘⌫）。
+    private static let deleteSample: [[CGPoint]] = [
+        [CGPoint(x: 1203.5, y: 948.3), CGPoint(x: 1203.5, y: 918.0), CGPoint(x: 1203.5, y: 887.6), CGPoint(x: 1203.5, y: 857.2), CGPoint(x: 1203.5, y: 826.9), CGPoint(x: 1203.5, y: 796.5), CGPoint(x: 1203.5, y: 766.1), CGPoint(x: 1203.5, y: 735.8), CGPoint(x: 1207.7, y: 715.7), CGPoint(x: 1207.7, y: 746.1), CGPoint(x: 1207.7, y: 776.4), CGPoint(x: 1210.8, y: 806.6), CGPoint(x: 1214.8, y: 836.6), CGPoint(x: 1218.1, y: 866.8), CGPoint(x: 1219.7, y: 897.1), CGPoint(x: 1235.4, y: 912.7), CGPoint(x: 1264.4, y: 904.3), CGPoint(x: 1290.8, y: 889.5), CGPoint(x: 1313.2, y: 869.1), CGPoint(x: 1326.5, y: 842.2), CGPoint(x: 1332.6, y: 812.5), CGPoint(x: 1333.7, y: 782.2), CGPoint(x: 1323.7, y: 754.5), CGPoint(x: 1301.9, y: 733.6), CGPoint(x: 1278.8, y: 713.9), CGPoint(x: 1252.2, y: 699.6), CGPoint(x: 1222.3, y: 694.8), CGPoint(x: 1192.0, y: 694.8)]
     ]
 
     /// 用户亲手绘制的「共享」图案（单笔）。
