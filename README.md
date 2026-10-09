@@ -186,6 +186,11 @@ magicallyEncircle/
 - 系统级快捷键（如 Mission Control）是通过专用通道触发的；仅合成普通键盘事件对它们无效
 - 「显示桌面」默认没有图案，需要自行录制或绑定快捷键
 - 图案播放默认在**当前鼠标所在屏幕居中**演示（原始坐标可能已不在屏内）
+-  ⚠️ APP尚未Apple Developer签名公证，macOS会提示「包已损坏，请移动至垃圾篓」。 
+
+> 安装完成后，打开终端执行下面命令，移除隔离标记即可正常打开：
+>
+> `xattr -cr /Applications/magicallyEncircle.app`
 
 ---
 
