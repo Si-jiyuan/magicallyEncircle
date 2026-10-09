@@ -134,27 +134,42 @@ private struct BuiltInSection: View {
                 Text("为每个动作录制自己的图案（在画布上画，可多笔画）。").font(.caption).foregroundStyle(.secondary)
 
                 ForEach(BuiltInGesture.all) { builtIn in
-                    HStack {
-                        Button { controller.playBuiltIn(builtIn.id) } label: {
-                            Image(systemName: "play.circle")
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(controller.overrideCount(builtIn.id) == 0 && builtIn.defaultSamples.isEmpty)
-                        .help("播放图案")
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Button { controller.playBuiltIn(builtIn.id) } label: {
+                                Image(systemName: "play.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(controller.overrideCount(builtIn.id) == 0 && builtIn.defaultSamples.isEmpty)
+                            .help("播放图案")
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(builtIn.title).font(.headline)
-                            Text(description(builtIn)).font(.caption).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(builtIn.title).font(.headline)
+                                Text(description(builtIn)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("录制…") {
+                                strokes = []
+                                recording = builtIn
+                            }
+                            if builtIn.action.isShortcutRebindable {
+                                Button("设置快捷键") { controller.beginBuiltInKeyBinding(builtIn.id) }
+                            }
+                            Button("恢复默认") { controller.resetBuiltIn(builtIn.id) }
+                                .disabled(controller.overrideCount(builtIn.id) == 0 && !controller.hasBuiltInShortcutOverride(builtIn.id))
                         }
-                        Spacer()
-                        Button("录制…") {
-                            strokes = []
-                            recording = builtIn
+
+                        if controller.pendingBindingTarget == .builtIn(builtIn.id) {
+                            HStack {
+                                if let display = controller.pendingKeyDisplay {
+                                    Text("已捕获 \(display)")
+                                    Button("保存") { controller.commitPendingBinding() }
+                                } else {
+                                    Text("请在键盘上按下快捷键…").foregroundStyle(.secondary)
+                                }
+                                Button("取消") { controller.cancelPendingBinding() }
+                            }
                         }
-                        Button("恢复默认") {
-                            controller.resetBuiltInOverride(builtIn.id)
-                        }
-                        .disabled(controller.overrideCount(builtIn.id) == 0)
                     }
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
@@ -184,7 +199,8 @@ private struct BuiltInSection: View {
         } else {
             trigger = "未设置"
         }
-        if let shortcut = builtIn.action.shortcut?.display, !shortcut.isEmpty {
+        let shortcut = controller.effectiveShortcutDisplay(forID: builtIn.id)
+        if !shortcut.isEmpty {
             return "\(shortcut) · \(trigger)"
         }
         return trigger
@@ -259,7 +275,7 @@ private struct CustomSection: View {
                     }
                 }
 
-                if controller.pendingBindingID == id {
+                if controller.pendingBindingTarget == .custom(id) {
                     HStack {
                         if let display = controller.pendingKeyDisplay {
                             Text("已捕获 \(display)")

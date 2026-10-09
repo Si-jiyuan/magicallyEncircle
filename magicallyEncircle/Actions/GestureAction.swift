@@ -135,6 +135,8 @@ enum GestureAction: CaseIterable {
     case showDesktop
     case close
     case share
+    case switchSpaceLeft
+    case switchSpaceRight
 
     var title: String {
         switch self {
@@ -150,6 +152,8 @@ enum GestureAction: CaseIterable {
         case .showDesktop: return "显示桌面"
         case .close: return "关闭"
         case .share: return "共享"
+        case .switchSpaceLeft: return "向左切换桌面"
+        case .switchSpaceRight: return "向右切换桌面"
         }
     }
 
@@ -167,6 +171,16 @@ enum GestureAction: CaseIterable {
         case .showDesktop: return KeyShortcut(keyCode: 103, flags: [], display: "F11")
         case .close: return CloseAction.current.shortcut
         case .share: return nil
+        case .switchSpaceLeft: return KeyShortcut(keyCode: 123, flags: .maskControl, display: "⌃←")
+        case .switchSpaceRight: return KeyShortcut(keyCode: 124, flags: .maskControl, display: "⌃→")
+        }
+    }
+
+    /// 是否允许用户为内置图案换绑快捷键（关闭/共享为特殊动作，不参与）。
+    var isShortcutRebindable: Bool {
+        switch self {
+        case .close, .share: return false
+        default: return true
         }
     }
 

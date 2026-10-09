@@ -8,6 +8,12 @@ import ApplicationServices
 import Combine
 import UniformTypeIdentifiers
 
+/// 正在等待绑定快捷键的目标（自定义图案或内置图案）。
+enum BindingTarget: Equatable {
+    case custom(UUID)
+    case builtIn(String)
+}
+
 /// 全局协调器：覆盖层管理、输入监听、手势识别、动作执行、自定义手势与权限。
 final class MagicController: NSObject, ObservableObject {
     static let shared = MagicController()
@@ -23,8 +29,9 @@ final class MagicController: NSObject, ObservableObject {
     @Published var showRecognitionHUD: Bool = true
     @Published private(set) var isRecordingGesture = false
     @Published private(set) var customGestures: [CustomGesture] = []
-    @Published private(set) var pendingBindingID: UUID?
+    @Published private(set) var pendingBindingTarget: BindingTarget?
     @Published private(set) var pendingKeyDisplay: String?
+    @Published private(set) var builtInShortcuts: [String: BuiltInShortcut] = [:]
     @Published private(set) var gestureOverrides: [String: [[[CodablePoint]]]] = [:]
     @Published private(set) var recordingBuiltInID: String?
     @Published private(set) var closeAction: CloseAction = CloseAction.current
@@ -36,6 +43,7 @@ final class MagicController: NSObject, ObservableObject {
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
     private let overrideStore = GestureOverrideStore()
+    private let builtInShortcutStore = BuiltInShortcutStore()
     private let patternPlayer = PatternPlayer()
 
     private var windows: [OverlayWindow] = []
@@ -61,6 +69,7 @@ final class MagicController: NSObject, ObservableObject {
         super.init()
         customGestures = store.load()
         gestureOverrides = overrideStore.load()
+        builtInShortcuts = builtInShortcutStore.load()
         monitor.delegate = self
         monitor.isEnabled = isEnabled
         monitor.onKeyCaptured = { [weak self] keyCode, flags in
@@ -208,6 +217,24 @@ final class MagicController: NSObject, ObservableObject {
         gestureOverrides[id]?.count ?? 0
     }
 
+    func hasBuiltInShortcutOverride(_ id: String) -> Bool {
+        builtInShortcuts[id] != nil
+    }
+
+    func effectiveShortcutDisplay(forID id: String) -> String {
+        if let override = builtInShortcuts[id] { return override.keyDisplay }
+        return BuiltInGesture.find(id)?.action.shortcut?.display ?? ""
+    }
+
+    /// 恢复某个内置图案的默认（图案 + 快捷键）。
+    func resetBuiltIn(_ id: String) {
+        gestureOverrides[id] = nil
+        builtInShortcuts[id] = nil
+        overrideStore.save(gestureOverrides)
+        builtInShortcutStore.save(builtInShortcuts)
+        showHUD(title: "已恢复默认", detail: BuiltInGesture.find(id)?.title ?? id)
+    }
+
     // MARK: - 设置窗口
 
     func setBuiltInOverride(_ id: String, strokes: [[CGPoint]]) {
@@ -281,7 +308,7 @@ final class MagicController: NSObject, ObservableObject {
         customGestures[index].keyCode = nil
         customGestures[index].modifierFlags = 0
         customGestures[index].keyDisplay = ""
-        if pendingBindingID == id { cancelPendingBinding() }
+        if pendingBindingTarget == .custom(id) { cancelPendingBinding() }
         persist()
         if !bundleIDs.isEmpty {
             showHUD(title: customGestures[index].name, detail: "已绑定 " + bundleIDs.map(appDisplayName).joined(separator: "、"))
@@ -294,7 +321,7 @@ final class MagicController: NSObject, ObservableObject {
         customGestures[index].keyCode = nil
         customGestures[index].modifierFlags = 0
         customGestures[index].keyDisplay = ""
-        if pendingBindingID == id { cancelPendingBinding() }
+        if pendingBindingTarget == .custom(id) { cancelPendingBinding() }
         persist()
         showHUD(title: customGestures[index].name, detail: "已清除绑定")
     }
@@ -401,7 +428,7 @@ final class MagicController: NSObject, ObservableObject {
     func beginKeyBinding(for id: UUID) {
         guard let gesture = customGestures.first(where: { $0.id == id }), !gesture.isAppBound else { return }
         isRecordingGesture = false
-        pendingBindingID = id
+        pendingBindingTarget = .custom(id)
         pendingKeyCode = nil
         pendingModifiers = []
         pendingKeyDisplay = nil
@@ -409,25 +436,49 @@ final class MagicController: NSObject, ObservableObject {
         showHUD(title: "请按下快捷键", detail: "需包含一个普通按键；按完回菜单点「保存绑定」")
     }
 
+    func beginBuiltInKeyBinding(_ id: String) {
+        guard let builtIn = BuiltInGesture.find(id), builtIn.action.isShortcutRebindable else { return }
+        isRecordingGesture = false
+        recordingBuiltInID = nil
+        pendingBindingTarget = .builtIn(id)
+        pendingKeyCode = nil
+        pendingModifiers = []
+        pendingKeyDisplay = nil
+        monitor.startKeyCapture()
+        showHUD(title: "为「\(builtIn.title)」设置快捷键", detail: "按完回菜单点「保存绑定」")
+    }
+
     func commitPendingBinding() {
-        guard let id = pendingBindingID,
-              let keyCode = pendingKeyCode,
-              let index = customGestures.firstIndex(where: { $0.id == id }) else { return }
-
-        customGestures[index].keyCode = keyCode
-        customGestures[index].modifierFlags = pendingModifiers.rawValue
-        customGestures[index].keyDisplay = pendingKeyDisplay ?? ""
-        customGestures[index].appBundleIDs = nil
-        persist()
-
-        let name = customGestures[index].name
+        guard let target = pendingBindingTarget, let keyCode = pendingKeyCode else { return }
+        let modifiers = pendingModifiers
         let display = pendingKeyDisplay ?? ""
-        cancelPendingBinding()
-        showHUD(title: "已绑定", detail: "\(name) → \(display)")
+
+        switch target {
+        case .custom(let id):
+            guard let index = customGestures.firstIndex(where: { $0.id == id }) else {
+                cancelPendingBinding()
+                return
+            }
+            customGestures[index].keyCode = keyCode
+            customGestures[index].modifierFlags = modifiers.rawValue
+            customGestures[index].keyDisplay = display
+            customGestures[index].appBundleIDs = nil
+            persist()
+            let name = customGestures[index].name
+            cancelPendingBinding()
+            showHUD(title: "已绑定", detail: "\(name) → \(display)")
+
+        case .builtIn(let id):
+            builtInShortcuts[id] = BuiltInShortcut(keyCode: keyCode, modifierFlags: modifiers.rawValue, keyDisplay: display)
+            builtInShortcutStore.save(builtInShortcuts)
+            let title = BuiltInGesture.find(id)?.title ?? id
+            cancelPendingBinding()
+            showHUD(title: "已绑定", detail: "\(title) → \(display)")
+        }
     }
 
     func cancelPendingBinding() {
-        pendingBindingID = nil
+        pendingBindingTarget = nil
         pendingKeyCode = nil
         pendingModifiers = []
         pendingKeyDisplay = nil
@@ -435,7 +486,7 @@ final class MagicController: NSObject, ObservableObject {
     }
 
     private func handleCapturedKey(keyCode: UInt16, flags: CGEventFlags) {
-        guard pendingBindingID != nil else { return }
+        guard pendingBindingTarget != nil else { return }
         let modifiers = flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift])
         pendingKeyCode = keyCode
         pendingModifiers = modifiers
@@ -473,7 +524,7 @@ final class MagicController: NSObject, ObservableObject {
     func deleteGesture(_ id: UUID) {
         customGestures.removeAll { $0.id == id }
         previewCache[id] = nil
-        if pendingBindingID == id {
+        if pendingBindingTarget == .custom(id) {
             cancelPendingBinding()
         }
         persist()
@@ -751,8 +802,15 @@ final class MagicController: NSObject, ObservableObject {
     }
 
     private func performBuiltIn(_ action: GestureAction, extra: String) {
-        action.perform()
-        var detail = action.shortcut?.display ?? ""
+        let builtIn = BuiltInGesture.all.first { $0.action == action }
+        if let id = builtIn?.id, let override = builtInShortcuts[id] {
+            // 用户换绑过的快捷键。
+            KeyShortcut(keyCode: override.keyCode, flags: CGEventFlags(rawValue: override.modifierFlags), display: override.keyDisplay).send()
+        } else {
+            action.perform()
+        }
+
+        var detail = builtIn.map { effectiveShortcutDisplay(forID: $0.id) } ?? (action.shortcut?.display ?? "")
         if !extra.isEmpty {
             detail += detail.isEmpty ? extra : "   " + extra
         }

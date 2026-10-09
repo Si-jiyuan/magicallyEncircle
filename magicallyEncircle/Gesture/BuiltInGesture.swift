@@ -31,7 +31,9 @@ struct BuiltInGesture: Identifiable {
         BuiltInGesture(id: "newTab", title: "新建标签页", action: .newTab, defaultSwipe: nil, defaultSamples: samples(for: .newTab)),
         BuiltInGesture(id: "lockScreen", title: "锁定屏幕", action: .lockScreen, defaultSwipe: nil, defaultSamples: samples(for: .lockScreen)),
         BuiltInGesture(id: "close", title: "关闭", action: .close, defaultSwipe: nil, defaultSamples: [closeUserDrawn, closeSimple]),
-        BuiltInGesture(id: "share", title: "共享", action: .share, defaultSwipe: nil, defaultSamples: [shareUserDrawn])
+        BuiltInGesture(id: "share", title: "共享", action: .share, defaultSwipe: nil, defaultSamples: [shareUserDrawn]),
+        BuiltInGesture(id: "spaceLeft", title: "向左切换桌面", action: .switchSpaceLeft, defaultSwipe: nil, defaultSamples: [spaceLeftSample]),
+        BuiltInGesture(id: "spaceRight", title: "向右切换桌面", action: .switchSpaceRight, defaultSwipe: nil, defaultSamples: [spaceRightSample])
     ]
 
     static func find(_ id: String) -> BuiltInGesture? {
@@ -57,5 +59,17 @@ struct BuiltInGesture: Identifiable {
     /// 用户亲手绘制的「共享」图案（单笔）。
     private static let shareUserDrawn: [[CGPoint]] = [
         [CGPoint(x: -581.7, y: 596.6), CGPoint(x: -599.1, y: 604.2), CGPoint(x: -617.2, y: 610.0), CGPoint(x: -635.8, y: 613.5), CGPoint(x: -654.3, y: 612.0), CGPoint(x: -671.8, y: 604.6), CGPoint(x: -688.8, y: 596.3), CGPoint(x: -702.3, y: 583.3), CGPoint(x: -705.1, y: 564.8), CGPoint(x: -699.3, y: 546.9), CGPoint(x: -687.6, y: 531.9), CGPoint(x: -674.0, y: 518.7), CGPoint(x: -660.2, y: 505.6), CGPoint(x: -647.1, y: 491.9), CGPoint(x: -634.8, y: 477.4), CGPoint(x: -623.2, y: 462.4), CGPoint(x: -613.1, y: 446.3), CGPoint(x: -610.6, y: 427.6), CGPoint(x: -618.4, y: 410.6), CGPoint(x: -632.2, y: 397.9), CGPoint(x: -648.6, y: 388.5), CGPoint(x: -666.7, y: 382.9), CGPoint(x: -685.4, y: 380.5), CGPoint(x: -704.4, y: 379.5), CGPoint(x: -723.4, y: 380.5), CGPoint(x: -741.5, y: 385.9), CGPoint(x: -759.4, y: 392.5), CGPoint(x: -776.2, y: 401.4)]
+    ]
+
+    /// 用户亲手绘制的「向左切换桌面」（横线 + 左箭头）。
+    private static let spaceLeftSample: [[CGPoint]] = [
+        [CGPoint(x: 194.1, y: -119.7), CGPoint(x: 187.9, y: -119.7), CGPoint(x: 182.0, y: -118.5), CGPoint(x: 175.9, y: -118.5), CGPoint(x: 169.9, y: -118.0), CGPoint(x: 163.9, y: -117.4), CGPoint(x: 157.8, y: -117.3), CGPoint(x: 151.7, y: -117.1), CGPoint(x: 145.6, y: -116.8), CGPoint(x: 139.5, y: -116.8), CGPoint(x: 133.4, y: -116.8), CGPoint(x: 127.2, y: -116.8), CGPoint(x: 121.1, y: -116.8), CGPoint(x: 115.0, y: -116.8), CGPoint(x: 108.9, y: -116.8), CGPoint(x: 102.8, y: -116.8), CGPoint(x: 96.6, y: -116.8), CGPoint(x: 90.5, y: -116.8), CGPoint(x: 84.4, y: -116.8), CGPoint(x: 78.3, y: -116.8), CGPoint(x: 72.2, y: -116.8), CGPoint(x: 66.0, y: -116.8), CGPoint(x: 59.9, y: -116.8), CGPoint(x: 53.8, y: -116.8), CGPoint(x: 47.7, y: -116.8), CGPoint(x: 41.6, y: -116.8), CGPoint(x: 35.4, y: -116.8), CGPoint(x: 29.3, y: -116.8)],
+        [CGPoint(x: 82.4, y: -65.7), CGPoint(x: 77.3, y: -67.3), CGPoint(x: 73.1, y: -70.6), CGPoint(x: 69.2, y: -74.5), CGPoint(x: 65.1, y: -77.9), CGPoint(x: 60.8, y: -81.3), CGPoint(x: 56.7, y: -84.8), CGPoint(x: 52.6, y: -88.4), CGPoint(x: 48.8, y: -92.2), CGPoint(x: 45.0, y: -96.2), CGPoint(x: 41.3, y: -100.1), CGPoint(x: 37.7, y: -104.2), CGPoint(x: 34.1, y: -108.3), CGPoint(x: 30.1, y: -112.0), CGPoint(x: 28.3, y: -116.6), CGPoint(x: 32.1, y: -120.4), CGPoint(x: 36.5, y: -123.6), CGPoint(x: 40.8, y: -126.8), CGPoint(x: 45.3, y: -129.7), CGPoint(x: 49.8, y: -132.8), CGPoint(x: 54.2, y: -136.0), CGPoint(x: 58.6, y: -139.1), CGPoint(x: 63.1, y: -142.3), CGPoint(x: 67.5, y: -145.5), CGPoint(x: 71.8, y: -148.8), CGPoint(x: 76.0, y: -152.2), CGPoint(x: 80.4, y: -155.3), CGPoint(x: 84.5, y: -158.9)]
+    ]
+
+    /// 用户亲手绘制的「向右切换桌面」（横线 + 右箭头）。
+    private static let spaceRightSample: [[CGPoint]] = [
+        [CGPoint(x: 14.3, y: -113.8), CGPoint(x: 20.8, y: -112.5), CGPoint(x: 27.7, y: -112.5), CGPoint(x: 34.2, y: -111.1), CGPoint(x: 41.0, y: -111.1), CGPoint(x: 47.8, y: -111.1), CGPoint(x: 54.7, y: -111.1), CGPoint(x: 61.5, y: -111.1), CGPoint(x: 68.3, y: -111.1), CGPoint(x: 75.1, y: -111.1), CGPoint(x: 82.0, y: -111.1), CGPoint(x: 88.8, y: -111.1), CGPoint(x: 95.5, y: -112.0), CGPoint(x: 102.2, y: -112.7), CGPoint(x: 108.9, y: -113.8), CGPoint(x: 115.7, y: -113.8), CGPoint(x: 122.6, y: -113.8), CGPoint(x: 129.3, y: -114.6), CGPoint(x: 136.1, y: -114.8), CGPoint(x: 142.8, y: -115.2), CGPoint(x: 149.6, y: -115.3), CGPoint(x: 156.5, y: -115.3), CGPoint(x: 163.3, y: -115.3), CGPoint(x: 170.1, y: -115.3), CGPoint(x: 176.9, y: -115.3), CGPoint(x: 183.8, y: -115.3), CGPoint(x: 190.6, y: -115.3), CGPoint(x: 197.4, y: -115.3)],
+        [CGPoint(x: 136.3, y: -65.8), CGPoint(x: 140.7, y: -69.8), CGPoint(x: 145.6, y: -73.0), CGPoint(x: 150.5, y: -76.2), CGPoint(x: 155.7, y: -79.0), CGPoint(x: 160.1, y: -83.0), CGPoint(x: 164.7, y: -86.8), CGPoint(x: 169.8, y: -89.8), CGPoint(x: 174.9, y: -92.9), CGPoint(x: 179.7, y: -96.3), CGPoint(x: 184.3, y: -100.1), CGPoint(x: 188.8, y: -103.8), CGPoint(x: 193.7, y: -107.2), CGPoint(x: 199.1, y: -109.7), CGPoint(x: 203.0, y: -114.1), CGPoint(x: 198.0, y: -116.4), CGPoint(x: 192.7, y: -119.2), CGPoint(x: 187.6, y: -122.1), CGPoint(x: 182.9, y: -125.7), CGPoint(x: 178.1, y: -129.2), CGPoint(x: 173.1, y: -132.3), CGPoint(x: 168.1, y: -135.5), CGPoint(x: 163.0, y: -138.6), CGPoint(x: 158.1, y: -141.9), CGPoint(x: 153.3, y: -145.3), CGPoint(x: 148.1, y: -148.2), CGPoint(x: 143.2, y: -151.5), CGPoint(x: 138.7, y: -155.4)]
     ]
 }

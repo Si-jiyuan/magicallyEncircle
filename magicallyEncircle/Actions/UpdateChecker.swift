@@ -17,7 +17,12 @@ struct AppVersionInfo: Decodable {
 final class UpdateChecker {
     static let shared = UpdateChecker()
 
-    private let feedURL = URL(string: "https://raw.githubusercontent.com/Si-jiyuan/magicallyEncircle/main/version.json")!
+    /// 附加时间戳参数，尽量绕过 raw.githubusercontent.com 的 CDN 缓存。
+    private var feedURL: URL {
+        var components = URLComponents(string: "https://raw.githubusercontent.com/Si-jiyuan/magicallyEncircle/main/version.json")!
+        components.queryItems = [URLQueryItem(name: "t", value: String(Int(Date().timeIntervalSince1970)))]
+        return components.url!
+    }
 
     var currentVersion: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"

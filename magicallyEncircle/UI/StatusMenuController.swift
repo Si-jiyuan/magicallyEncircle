@@ -114,9 +114,30 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         record.representedObject = builtIn.id
         submenu.addItem(record)
 
-        let reset = actionItem("恢复默认图案", #selector(resetBuiltIn))
+        if builtIn.action.isShortcutRebindable {
+            if controller.pendingBindingTarget == .builtIn(builtIn.id) {
+                let display = controller.pendingKeyDisplay
+                let status = NSMenuItem(
+                    title: display.map { "已捕获 \($0)，点击保存" } ?? "等待按键…",
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                status.isEnabled = false
+                submenu.addItem(status)
+                if display != nil {
+                    submenu.addItem(actionItem("保存绑定", #selector(commitBinding)))
+                }
+                submenu.addItem(actionItem("取消绑定", #selector(cancelBinding)))
+            } else {
+                let bind = actionItem("设置快捷键…", #selector(beginBuiltInBinding))
+                bind.representedObject = builtIn.id
+                submenu.addItem(bind)
+            }
+        }
+
+        let reset = actionItem("恢复默认", #selector(resetBuiltIn))
         reset.representedObject = builtIn.id
-        reset.isEnabled = controller.overrideCount(builtIn.id) > 0
+        reset.isEnabled = controller.overrideCount(builtIn.id) > 0 || controller.hasBuiltInShortcutOverride(builtIn.id)
         submenu.addItem(reset)
 
         item.submenu = submenu
@@ -135,7 +156,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         } else {
             trigger = "未设置"
         }
-        if let shortcut = builtIn.action.shortcut?.display, !shortcut.isEmpty {
+        let shortcut = controller.effectiveShortcutDisplay(forID: builtIn.id)
+        if !shortcut.isEmpty {
             return "\(shortcut) · \(trigger)"
         }
         return trigger
@@ -177,7 +199,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         rename.representedObject = gesture.id
         submenu.addItem(rename)
 
-        if controller.pendingBindingID == gesture.id {
+        if controller.pendingBindingTarget == .custom(gesture.id) {
             let display = controller.pendingKeyDisplay
             let status = NSMenuItem(
                 title: display.map { "已捕获 \($0)，点击保存" } ?? "等待按键…",
@@ -227,7 +249,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func resetBuiltIn(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        controller.resetBuiltInOverride(id)
+        controller.resetBuiltIn(id)
+    }
+
+    @objc private func beginBuiltInBinding(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        controller.beginBuiltInKeyBinding(id)
     }
 
     @objc private func resetAllBuiltIns() {
