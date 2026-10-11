@@ -56,6 +56,10 @@ final class InputMonitor {
     private let tapMaxDuration: TimeInterval = 0.3
 
     private var plainDragActive = false
+    private var dragDetermined = false
+    private var dragIsFileDrag = false
+    private var dragInitialChangeCount = -1
+    private var lastPasteboardCheck: TimeInterval = 0
     private var currentDragScreen: NSScreen?
     private var currentZone: EdgeZone?
     private var edgeTimer: Timer?
@@ -112,6 +116,8 @@ final class InputMonitor {
         isCapturingKeys = false
         isMultiStrokeSession = false
         plainDragActive = false
+        dragDetermined = false
+        dragIsFileDrag = false
         clearEdgeZone()
         endDragScreen()
     }
@@ -157,6 +163,9 @@ final class InputMonitor {
             }
             // 普通拖拽（未按 Option）：用于「拖到屏幕边缘区间切换桌面」。
             plainDragActive = true
+            dragDetermined = false
+            dragIsFileDrag = false
+            dragInitialChangeCount = NSPasteboard(name: .drag).changeCount
             clearEdgeZone()
 
         case .leftMouseDragged:
@@ -166,8 +175,11 @@ final class InputMonitor {
             }
             if isEnabled, isEdgeSwitchEnabled, plainDragActive {
                 let point = appKitPoint(event.location)
-                updateDragScreen(point)
-                updateEdgeDwell(point)
+                determineDragKindIfNeeded(now: now)
+                if dragDetermined, dragIsFileDrag {
+                    updateDragScreen(point)
+                    updateEdgeDwell(point)
+                }
             }
 
         case .leftMouseUp:
@@ -177,6 +189,8 @@ final class InputMonitor {
                 return nil
             }
             plainDragActive = false
+            dragDetermined = false
+            dragIsFileDrag = false
             clearEdgeZone()
             endDragScreen()
 
@@ -188,6 +202,20 @@ final class InputMonitor {
     }
 
     // MARK: - 边缘识别区间 → 切换该屏桌面
+
+    /// 判断本次拖拽是不是「拖文件」。
+    /// 用拖拽板 changeCount 判断：拖窗口不会改变它，只有真正的内容拖拽（拖文件/文字等）才会。
+    /// 且仅当拖拽板含文件 URL 时才算「拖文件」（拖文字/拖窗口都不算）。
+    private func determineDragKindIfNeeded(now: TimeInterval) {
+        guard !dragDetermined else { return }
+        guard now - lastPasteboardCheck > 0.04 else { return }
+        lastPasteboardCheck = now
+
+        let pasteboard = NSPasteboard(name: .drag)
+        guard pasteboard.changeCount != dragInitialChangeCount else { return }
+        dragDetermined = true
+        dragIsFileDrag = pasteboard.types?.contains(.fileURL) ?? false
+    }
 
     private func updateDragScreen(_ point: CGPoint) {
         let screen = screenContaining(point)
