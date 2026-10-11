@@ -355,7 +355,7 @@ private struct GeneralSection: View {
 
                 Toggle("启用魔法线条", isOn: $controller.isEnabled)
                 Toggle("显示识别反馈", isOn: $controller.showRecognitionHUD)
-                Toggle("拖拽到屏幕边缘切换桌面", isOn: Binding(
+                Toggle("拖拽文件到屏幕边缘切换桌面", isOn: Binding(
                     get: { controller.edgeSwitchEnabled },
                     set: { controller.setEdgeSwitchEnabled($0) }
                 ))
@@ -370,6 +370,52 @@ private struct GeneralSection: View {
 
                 Divider()
 
+                Text("绘图方式").font(.headline)
+                Picker("", selection: Binding(
+                    get: { controller.drawTrigger },
+                    set: { controller.setDrawTrigger($0) }
+                )) {
+                    ForEach(DrawTrigger.allCases) { trigger in
+                        Text(trigger.title).tag(trigger)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+
+                if controller.drawTrigger == .optionLeft {
+                    Text("启用多笔画").font(.headline)
+                    Picker("", selection: Binding(
+                        get: { controller.multiStrokeMode },
+                        set: { controller.setMultiStrokeMode($0) }
+                    )) {
+                        ForEach(MultiStrokeMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    Text("该选项会替换原本「单击 Option 单笔画」的逻辑；两种模式互不影响。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("多笔画识别速度").font(.headline)
+                    Picker("", selection: Binding(
+                        get: { controller.middleRecognitionSpeed },
+                        set: { controller.setMiddleRecognitionSpeed($0) }
+                    )) {
+                        ForEach(MiddleRecognitionSpeed.allCases) { speed in
+                            Text(speed.title).tag(speed)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    Text("鼠标中键绘图时，停止操作该时长后自动开始识别。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
                 Text("「关闭」图案的动作").font(.headline)
                 Picker("", selection: Binding(
                     get: { controller.closeAction },
@@ -381,23 +427,6 @@ private struct GeneralSection: View {
                 }
                 .labelsHidden()
                 Text("识别到「关闭」图案（叉号）时执行上面的动作。图案本身可在「内置图案」里修改。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Divider()
-
-                Text("启用多笔画").font(.headline)
-                Picker("", selection: Binding(
-                    get: { controller.multiStrokeMode },
-                    set: { controller.setMultiStrokeMode($0) }
-                )) {
-                    ForEach(MultiStrokeMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
-                Text("该选项会替换原本「单击 Option 单笔画」的逻辑；两种模式互不影响。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

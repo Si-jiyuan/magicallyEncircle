@@ -32,6 +32,7 @@ protocol InputMonitorDelegate: AnyObject {
 final class InputMonitor {
     weak var delegate: InputMonitorDelegate?
     var isEnabled = true
+    var drawTrigger: DrawTrigger = .optionLeft
     var onKeyCaptured: ((UInt16, CGEventFlags) -> Void)?
     /// 拖拽开始/跨到某块屏幕（用于显示边缘识别区间的魔法引导线）。
     var onDragScreenChanged: ((NSScreen?) -> Void)?
@@ -71,12 +72,14 @@ final class InputMonitor {
     func start() -> Bool {
         guard eventTap == nil else { return true }
 
-        let mask = CGEventMask(1) << CGEventType.leftMouseDown.rawValue
-            | CGEventMask(1) << CGEventType.leftMouseDragged.rawValue
-            | CGEventMask(1) << CGEventType.leftMouseUp.rawValue
-            | CGEventMask(1) << CGEventType.flagsChanged.rawValue
-            | CGEventMask(1) << CGEventType.keyDown.rawValue
-            | CGEventMask(1) << CGEventType.keyUp.rawValue
+        var mask: CGEventMask = 0
+        for type in [
+            CGEventType.leftMouseDown, .leftMouseDragged, .leftMouseUp,
+            .otherMouseDown, .otherMouseDragged, .otherMouseUp,
+            .flagsChanged, .keyDown, .keyUp
+        ] {
+            mask |= CGEventMask(1) << type.rawValue
+        }
 
         let refcon = Unmanaged.passUnretained(self).toOpaque()
 
@@ -148,20 +151,41 @@ final class InputMonitor {
         let now = ProcessInfo.processInfo.systemUptime
 
         if type == .flagsChanged {
-            handleModifierChange(event, now: now)
+            if drawTrigger == .optionLeft {
+                handleModifierChange(event, now: now)
+            }
             return Unmanaged.passUnretained(event)
         }
 
         let modifierHeld = event.flags.contains(.maskAlternate)
+        let isMiddle = event.getIntegerValueField(.mouseEventButtonNumber) == 2
 
+        // 绘制触发（按当前方式）。
+        let drawDown = (drawTrigger == .optionLeft && type == .leftMouseDown && modifierHeld)
+            || (drawTrigger == .middleButton && type == .otherMouseDown && isMiddle)
+        let drawDrag = (drawTrigger == .optionLeft && type == .leftMouseDragged)
+            || (drawTrigger == .middleButton && type == .otherMouseDragged && isMiddle)
+        let drawUp = (drawTrigger == .optionLeft && type == .leftMouseUp)
+            || (drawTrigger == .middleButton && type == .otherMouseUp && isMiddle)
+
+        if drawDown {
+            isDrawing = true
+            delegate?.inputMonitor(self, didBeginAt: appKitPoint(event.location), at: now)
+            return nil
+        }
+        if drawDrag, isDrawing {
+            delegate?.inputMonitor(self, didMoveTo: appKitPoint(event.location), at: now)
+            return nil
+        }
+        if drawUp, isDrawing {
+            isDrawing = false
+            delegate?.inputMonitor(self, didEndAt: appKitPoint(event.location), at: now)
+            return nil
+        }
+
+        // 普通左键拖拽（未用于绘制）→「拖到屏幕边缘区间切换桌面」。
         switch type {
         case .leftMouseDown:
-            if isEnabled && modifierHeld {
-                isDrawing = true
-                delegate?.inputMonitor(self, didBeginAt: appKitPoint(event.location), at: now)
-                return nil
-            }
-            // 普通拖拽（未按 Option）：用于「拖到屏幕边缘区间切换桌面」。
             plainDragActive = true
             dragDetermined = false
             dragIsFileDrag = false
@@ -169,10 +193,6 @@ final class InputMonitor {
             clearEdgeZone()
 
         case .leftMouseDragged:
-            if isDrawing {
-                delegate?.inputMonitor(self, didMoveTo: appKitPoint(event.location), at: now)
-                return nil
-            }
             if isEnabled, isEdgeSwitchEnabled, plainDragActive {
                 let point = appKitPoint(event.location)
                 determineDragKindIfNeeded(now: now)
@@ -183,11 +203,6 @@ final class InputMonitor {
             }
 
         case .leftMouseUp:
-            if isDrawing {
-                isDrawing = false
-                delegate?.inputMonitor(self, didEndAt: appKitPoint(event.location), at: now)
-                return nil
-            }
             plainDragActive = false
             dragDetermined = false
             dragIsFileDrag = false

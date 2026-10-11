@@ -45,6 +45,10 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var edgeSwitchEnabled: Bool = (UserDefaults.standard.object(forKey: "magicallyEncircle.edgeSwitchEnabled") as? Bool) ?? true {
         didSet { monitor.isEdgeSwitchEnabled = edgeSwitchEnabled }
     }
+    @Published private(set) var drawTrigger: DrawTrigger = DrawTrigger.current {
+        didSet { monitor.drawTrigger = drawTrigger }
+    }
+    @Published private(set) var middleRecognitionSpeed: MiddleRecognitionSpeed = MiddleRecognitionSpeed.current
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
@@ -58,6 +62,7 @@ final class MagicController: NSObject, ObservableObject {
 
     private var currentPoints: [CGPoint] = []
     private var multiStrokePoints: [[CGPoint]] = []
+    private var middleRecognitionTimer: Timer?
     private var strokeClosed = false
     private var holdTimer: Timer?
     private var didCapture = false
@@ -88,6 +93,7 @@ final class MagicController: NSObject, ObservableObject {
             self?.handleEdgeSwitch(zone)
         }
         monitor.isEdgeSwitchEnabled = edgeSwitchEnabled
+        monitor.drawTrigger = drawTrigger
     }
 
     func start() {
@@ -108,7 +114,7 @@ final class MagicController: NSObject, ObservableObject {
                 self?.showAccessibilityAlert()
             }
         } else {
-            showHUD(title: "magicallyEncircle 已启动", detail: "按住 Option 拖动开始绘制")
+            showHUD(title: "magicallyEncircle 已启动", detail: "按住\(drawHint)拖动开始绘制")
         }
 
         if autoCheckUpdates {
@@ -121,6 +127,8 @@ final class MagicController: NSObject, ObservableObject {
         patternPlayer.cancel()
         holdTimer?.invalidate()
         holdTimer = nil
+        middleRecognitionTimer?.invalidate()
+        middleRecognitionTimer = nil
         NotificationCenter.default.removeObserver(self)
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
@@ -169,7 +177,7 @@ final class MagicController: NSObject, ObservableObject {
         cancelPendingBinding()
         recordingBuiltInID = nil
         isRecordingGesture = true
-        showHUD(title: "记录图案中", detail: "用 Option+左键画一个图案，松手即保存")
+        showHUD(title: "记录图案中", detail: "用\(drawHint)画一个图案")
     }
 
     func cancelRecordingGesture() {
@@ -184,7 +192,7 @@ final class MagicController: NSObject, ObservableObject {
         cancelPendingBinding()
         isRecordingGesture = false
         recordingBuiltInID = id
-        showHUD(title: "录制「\(builtIn.title)」的图案", detail: "用 Option+左键画一个图案，松手保存")
+        showHUD(title: "录制「\(builtIn.title)」的图案", detail: "用\(drawHint)画一个图案")
     }
 
     func cancelRecordingBuiltInOverride() {
@@ -286,6 +294,54 @@ final class MagicController: NSObject, ObservableObject {
     func setEdgeSwitchEnabled(_ enabled: Bool) {
         edgeSwitchEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "magicallyEncircle.edgeSwitchEnabled")
+    }
+
+    func setDrawTrigger(_ trigger: DrawTrigger) {
+        drawTrigger = trigger
+        DrawTrigger.current = trigger
+    }
+
+    func setMiddleRecognitionSpeed(_ speed: MiddleRecognitionSpeed) {
+        middleRecognitionSpeed = speed
+        MiddleRecognitionSpeed.current = speed
+    }
+
+    /// 当前绘制方式的提示文案。
+    private var drawHint: String {
+        drawTrigger == .middleButton ? "鼠标中键" : "Option + 左键"
+    }
+
+    /// 中键模式：每次松手后重启「无操作计时」，到点才识别累积的多笔图案。
+    private func restartMiddleRecognitionTimer() {
+        middleRecognitionTimer?.invalidate()
+        let timer = Timer(timeInterval: middleRecognitionSpeed.delay, repeats: false) { [weak self] _ in
+            self?.finalizeMiddleStrokes()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        middleRecognitionTimer = timer
+    }
+
+    private func finalizeMiddleStrokes() {
+        middleRecognitionTimer?.invalidate()
+        middleRecognitionTimer = nil
+
+        let strokes = multiStrokePoints
+        multiStrokePoints.removeAll()
+
+        let now = ProcessInfo.processInfo.systemUptime
+        windows.forEach {
+            $0.canvasView.pinsStrokes = false
+            $0.canvasView.releasePinnedStrokes(time: now)
+        }
+        guard !strokes.isEmpty else { return }
+
+        if isRecordingGesture {
+            saveRecordedGesture(strokes)
+        } else if let builtInID = recordingBuiltInID {
+            saveBuiltInOverride(builtInID, strokes: strokes)
+        } else {
+            handleRecognizedStrokes(strokes)
+        }
     }
 
     /// 在屏幕边缘识别区间停留 → 通过 ⌃← / ⌃→ 切换**该屏**桌面。
@@ -938,7 +994,7 @@ final class MagicController: NSObject, ObservableObject {
     private func showAccessibilityAlert() {
         let alert = NSAlert()
         alert.messageText = "需要「辅助功能」权限"
-        alert.informativeText = "magicallyEncircle 需要辅助功能权限来全局监听 Option + 鼠标左键。请在「系统设置 → 隐私与安全性 → 辅助功能」中勾选本应用，然后重新启动应用。"
+        alert.informativeText = "magicallyEncircle 需要辅助功能权限来全局监听「\(drawHint)」的绘制。请在「系统设置 → 隐私与安全性 → 辅助功能」中勾选本应用，然后重新启动应用。"
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "稍后")
 
@@ -955,11 +1011,16 @@ extension MagicController: InputMonitorDelegate {
         guard isEnabled, let (window, view) = target(for: point) else { return }
         patternPlayer.cancel()
         resetStrokeState()
-        if monitor.isMultiStrokeSession {
+        if monitor.isMultiStrokeSession || drawTrigger == .middleButton {
             view.pinsStrokes = true
         } else {
             multiStrokePoints.removeAll()
             view.pinsStrokes = false
+        }
+        // 中键模式：开始新一笔时取消上一个「无操作计时」，避免画到一半就被识别。
+        if drawTrigger == .middleButton {
+            middleRecognitionTimer?.invalidate()
+            middleRecognitionTimer = nil
         }
         currentWindow = window
         currentView = view
@@ -1005,7 +1066,11 @@ extension MagicController: InputMonitorDelegate {
         view.finishStroke(time: time)
 
         if didCapture {
-            // 已在按住期间完成截图。
+            // 截图已完成：释放固定笔画让其淡出。
+            windows.forEach {
+                $0.canvasView.pinsStrokes = false
+                $0.canvasView.releasePinnedStrokes(time: time)
+            }
         } else if monitor.isMultiStrokeSession {
             // 多笔模式：闭合圈仍按「圈选复制」处理；其余笔画先攒着，等松开 Option 再识别。
             if strokeClosed {
@@ -1013,6 +1078,14 @@ extension MagicController: InputMonitorDelegate {
             } else if currentPoints.count >= 2 {
                 multiStrokePoints.append(currentPoints)
             }
+        } else if drawTrigger == .middleButton {
+            // 中键模式：闭合圈按「圈选复制」；其余笔画先攒着，无操作 X 秒后再统一识别。
+            if strokeClosed {
+                performLassoCopy()
+            } else if currentPoints.count >= 2 {
+                multiStrokePoints.append(currentPoints)
+            }
+            restartMiddleRecognitionTimer()
         } else if isRecordingGesture {
             saveRecordedGesture([currentPoints])
         } else if let builtInID = recordingBuiltInID {
