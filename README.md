@@ -115,7 +115,7 @@ brew install --cask magically-encircle
 或单独执行
 
 ```bash
-brew install --cask Si-jiyuan/tap/magicline
+brew install --cask Si-jiyuan/tap/magically-encircle
 ```
 
 ###   手动安装
