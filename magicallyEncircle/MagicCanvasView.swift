@@ -81,6 +81,27 @@ final class MagicCanvasView: NSView {
     /// 多笔模式下，笔画在识别前保持显示（不淡出）。
     var pinsStrokes = false
 
+    // 边缘识别区间引导线：左右各一条，从屏幕中心向上下生长，结束时渐隐。
+    private var guideLinesActive = false
+    private var guideProgress: CGFloat = 0
+    private var guideAlpha: CGFloat = 0
+    private let guideInset: CGFloat = 20
+    private let guideGrowDuration: TimeInterval = 0.28
+    /// 顶部内边距（避开菜单栏）；由覆盖层按屏幕设置。
+    var topInset: CGFloat = 0
+
+    func showGuideLines() {
+        guideLinesActive = true
+        startTimerIfNeeded()
+        needsDisplay = true
+    }
+
+    func hideGuideLines() {
+        guideLinesActive = false
+        startTimerIfNeeded()
+        needsDisplay = true
+    }
+
     func finishStroke(time: TimeInterval) {
         guard let stroke = current else { return }
         if !pinsStrokes {
@@ -108,13 +129,21 @@ final class MagicCanvasView: NSView {
     }
 
     private func stopTimerIfIdle() {
-        guard strokes.isEmpty && particles.isEmpty else { return }
+        guard strokes.isEmpty && particles.isEmpty && !guideLinesActive && guideAlpha <= 0.01 else { return }
         timer?.invalidate()
         timer = nil
     }
 
     private func tick() {
         let now = ProcessInfo.processInfo.systemUptime
+
+        if guideLinesActive {
+            guideProgress = min(1, guideProgress + CGFloat(frameInterval / guideGrowDuration))
+            guideAlpha = min(1, guideAlpha + CGFloat(frameInterval / guideGrowDuration))
+        } else {
+            // 与鼠标绘制图案的淡出用同一时长，便于日后统一调参。
+            guideAlpha = max(0, guideAlpha - CGFloat(frameInterval / fadeDuration))
+        }
 
         for index in particles.indices {
             particles[index].velocity.dx *= 0.96
@@ -156,6 +185,41 @@ final class MagicCanvasView: NSView {
 
         drawParticles(in: ctx, now: now)
         drawStrokes(in: ctx, now: now)
+        drawGuideLine(in: ctx)
+    }
+
+    private func drawGuideLine(in ctx: CGContext) {
+        guard guideAlpha > 0.01 else { return }
+        let resolved = style.resolved()
+        let centerY = bounds.height / 2
+        let topY = bounds.height - topInset
+        let bottomY: CGFloat = 0
+        let yTop = centerY + (topY - centerY) * guideProgress
+        let yBottom = centerY + (bottomY - centerY) * guideProgress
+
+        for x in [guideInset, bounds.width - guideInset] {
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: x, y: yBottom))
+            path.addLine(to: CGPoint(x: x, y: yTop))
+
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: 14, color: resolved.glowColor.withAlphaComponent(0.9 * guideAlpha).cgColor)
+            ctx.setStrokeColor(resolved.glowColor.withAlphaComponent(0.5 * guideAlpha).cgColor)
+            ctx.setLineWidth(6)
+            ctx.setLineCap(.round)
+            ctx.addPath(path)
+            ctx.strokePath()
+            ctx.restoreGState()
+
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: 3, color: resolved.coreColor.withAlphaComponent(0.9 * guideAlpha).cgColor)
+            ctx.setStrokeColor(resolved.coreColor.withAlphaComponent(guideAlpha).cgColor)
+            ctx.setLineWidth(2)
+            ctx.setLineCap(.round)
+            ctx.addPath(path)
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
     }
 
     private func drawParticles(in ctx: CGContext, now: TimeInterval) {

@@ -42,6 +42,9 @@ final class MagicController: NSObject, ObservableObject {
     @Published private(set) var playbackSpeed: Double = PlaybackSpeed.current
     @Published private(set) var launchAtLoginEnabled: Bool = LaunchAtLogin.isEnabled
     @Published private(set) var autoCheckUpdates: Bool = UpdateChecker.autoCheckEnabled
+    @Published private(set) var edgeSwitchEnabled: Bool = (UserDefaults.standard.object(forKey: "magicallyEncircle.edgeSwitchEnabled") as? Bool) ?? true {
+        didSet { monitor.isEdgeSwitchEnabled = edgeSwitchEnabled }
+    }
 
     private let monitor = InputMonitor()
     private let store = CustomGestureStore()
@@ -78,6 +81,13 @@ final class MagicController: NSObject, ObservableObject {
         monitor.onKeyCaptured = { [weak self] keyCode, flags in
             self?.handleCapturedKey(keyCode: keyCode, flags: flags)
         }
+        monitor.onDragScreenChanged = { [weak self] screen in
+            self?.updateGuideLines(screen)
+        }
+        monitor.onEdgeSwitch = { [weak self] zone in
+            self?.handleEdgeSwitch(zone)
+        }
+        monitor.isEdgeSwitchEnabled = edgeSwitchEnabled
     }
 
     func start() {
@@ -271,6 +281,28 @@ final class MagicController: NSObject, ObservableObject {
     func setAutoCheckUpdates(_ enabled: Bool) {
         autoCheckUpdates = enabled
         UpdateChecker.autoCheckEnabled = enabled
+    }
+
+    func setEdgeSwitchEnabled(_ enabled: Bool) {
+        edgeSwitchEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "magicallyEncircle.edgeSwitchEnabled")
+    }
+
+    /// 在屏幕边缘识别区间停留 → 通过 ⌃← / ⌃→ 切换**该屏**桌面。
+    private func handleEdgeSwitch(_ zone: EdgeZone) {
+        let action: GestureAction = zone.direction == .left ? .switchSpaceLeft : .switchSpaceRight
+        action.perform()
+    }
+
+    /// 拖拽开始时，在当前屏幕的覆盖层上显示边缘识别区间引导线；拖拽结束时隐藏（渐隐）。
+    private func updateGuideLines(_ screen: NSScreen?) {
+        for window in windows {
+            if let screen, window.targetScreen === screen {
+                window.canvasView.showGuideLines()
+            } else {
+                window.canvasView.hideGuideLines()
+            }
+        }
     }
 
     func checkForUpdates() {
@@ -736,9 +768,12 @@ final class MagicController: NSObject, ObservableObject {
             return
         }
 
-        // 2) 已绑定快捷键的自定义图案。
-        if let custom = ranked.first(where: { $0.candidate.customID != nil }), custom.score >= customThreshold {
-            performCustomGesture(custom.candidate.customID!, score: custom.score, ranking: ranking)
+        // 取全局最匹配的一项（自定义与内置一起比，谁分高谁赢）。
+        let best = ranked.first
+
+        // 2) 最匹配的是「已绑定自定义图案」且达标 → 用自定义。
+        if let best, let customID = best.candidate.customID, best.score >= customThreshold {
+            performCustomGesture(customID, score: best.score, ranking: ranking)
             return
         }
 
@@ -748,11 +783,9 @@ final class MagicController: NSObject, ObservableObject {
             return
         }
 
-        // 4) 内置图案。
-        if let builtIn = ranked.first(where: { $0.candidate.action != nil }),
-           builtIn.score >= symbolThreshold,
-           let action = builtIn.candidate.action {
-            performBuiltIn(action, extra: String(format: "%@ %.0f%%\n%@", builtIn.candidate.name, builtIn.score * 100, ranking))
+        // 4) 最匹配的是内置图案且达标 → 用内置。
+        if let best, let action = best.candidate.action, best.score >= symbolThreshold {
+            performBuiltIn(action, extra: String(format: "%@ %.0f%%\n%@", best.candidate.name, best.score * 100, ranking))
             return
         }
 

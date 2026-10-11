@@ -6,6 +6,19 @@
 import AppKit
 import CoreGraphics
 
+enum EdgeDirection {
+    case left
+    case right
+}
+
+/// 鼠标拖拽进入的「屏幕边缘识别区间」。
+struct EdgeZone {
+    let direction: EdgeDirection
+    let screen: NSScreen
+    /// 识别边界线的全局 x（AppKit 坐标）——用于绘制引导线。
+    let boundaryX: CGFloat
+}
+
 protocol InputMonitorDelegate: AnyObject {
     func inputMonitor(_ monitor: InputMonitor, didBeginAt point: CGPoint, at time: TimeInterval)
     func inputMonitor(_ monitor: InputMonitor, didMoveTo point: CGPoint, at time: TimeInterval)
@@ -20,6 +33,11 @@ final class InputMonitor {
     weak var delegate: InputMonitorDelegate?
     var isEnabled = true
     var onKeyCaptured: ((UInt16, CGEventFlags) -> Void)?
+    /// 拖拽开始/跨到某块屏幕（用于显示边缘识别区间的魔法引导线）。
+    var onDragScreenChanged: ((NSScreen?) -> Void)?
+    /// 在识别区间停留足够久（用于切换该屏桌面）。
+    var onEdgeSwitch: ((EdgeZone) -> Void)?
+    var isEdgeSwitchEnabled = true
 
     /// 当前是否处于「双击 Option 触发的多笔模式」。
     private(set) var isMultiStrokeSession = false
@@ -36,6 +54,14 @@ final class InputMonitor {
 
     private let doubleTapInterval: TimeInterval = 0.4
     private let tapMaxDuration: TimeInterval = 0.3
+
+    private var plainDragActive = false
+    private var currentDragScreen: NSScreen?
+    private var currentZone: EdgeZone?
+    private var edgeTimer: Timer?
+    private var edgeFired = false
+    private let edgeDwell: TimeInterval = 0.75
+    private let edgeInset: CGFloat = 20
 
     @discardableResult
     func start() -> Bool {
@@ -85,6 +111,9 @@ final class InputMonitor {
         isDrawing = false
         isCapturingKeys = false
         isMultiStrokeSession = false
+        plainDragActive = false
+        clearEdgeZone()
+        endDragScreen()
     }
 
     func startKeyCapture() { isCapturingKeys = true }
@@ -126,22 +155,107 @@ final class InputMonitor {
                 delegate?.inputMonitor(self, didBeginAt: appKitPoint(event.location), at: now)
                 return nil
             }
+            // 普通拖拽（未按 Option）：用于「拖到屏幕边缘区间切换桌面」。
+            plainDragActive = true
+            clearEdgeZone()
+
         case .leftMouseDragged:
             if isDrawing {
                 delegate?.inputMonitor(self, didMoveTo: appKitPoint(event.location), at: now)
                 return nil
             }
+            if isEnabled, isEdgeSwitchEnabled, plainDragActive {
+                let point = appKitPoint(event.location)
+                updateDragScreen(point)
+                updateEdgeDwell(point)
+            }
+
         case .leftMouseUp:
             if isDrawing {
                 isDrawing = false
                 delegate?.inputMonitor(self, didEndAt: appKitPoint(event.location), at: now)
                 return nil
             }
+            plainDragActive = false
+            clearEdgeZone()
+            endDragScreen()
+
         default:
             break
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    // MARK: - 边缘识别区间 → 切换该屏桌面
+
+    private func updateDragScreen(_ point: CGPoint) {
+        let screen = screenContaining(point)
+        guard screen !== currentDragScreen else { return }
+        currentDragScreen = screen
+        onDragScreenChanged?(screen)
+    }
+
+    private func endDragScreen() {
+        guard currentDragScreen != nil else { return }
+        currentDragScreen = nil
+        onDragScreenChanged?(nil)
+    }
+
+    private func updateEdgeDwell(_ point: CGPoint) {
+        guard let screen = screenContaining(point), let zone = edgeZone(point, screen) else {
+            clearEdgeZone()
+            return
+        }
+
+        let changed = currentZone == nil
+            || currentZone!.direction != zone.direction
+            || currentZone!.screen !== zone.screen
+        currentZone = zone
+
+        guard changed else { return }
+        edgeFired = false
+        edgeTimer?.invalidate()
+
+        let timer = Timer(timeInterval: edgeDwell, repeats: false) { [weak self] _ in
+            self?.fireEdge()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        edgeTimer = timer
+    }
+
+    private func fireEdge() {
+        guard !edgeFired, let zone = currentZone else { return }
+        edgeFired = true
+        edgeTimer = nil
+        onEdgeSwitch?(zone)
+    }
+
+    private func clearEdgeZone() {
+        edgeTimer?.invalidate()
+        edgeTimer = nil
+        edgeFired = false
+        currentZone = nil
+    }
+
+    private func screenContaining(_ point: CGPoint) -> NSScreen? {
+        // 用「包含边界」判断，否则鼠标到屏幕最右侧（x == maxX）会找不到屏幕。
+        NSScreen.screens.first { screen in
+            let frame = screen.frame
+            return point.x >= frame.minX && point.x <= frame.maxX
+                && point.y >= frame.minY && point.y <= frame.maxY
+        }
+    }
+
+    private func edgeZone(_ point: CGPoint, _ screen: NSScreen) -> EdgeZone? {
+        let frame = screen.frame
+        if point.x <= frame.minX + edgeInset {
+            return EdgeZone(direction: .left, screen: screen, boundaryX: frame.minX + edgeInset)
+        }
+        if point.x >= frame.maxX - edgeInset {
+            return EdgeZone(direction: .right, screen: screen, boundaryX: frame.maxX - edgeInset)
+        }
+        return nil
     }
 
     /// 检测 Option 的单击 / 双击，双击进入多笔模式。

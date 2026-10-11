@@ -13,6 +13,8 @@ final class OverlayWindow: NSWindow {
     init(screen: NSScreen) {
         self.targetScreen = screen
         self.canvasView = MagicCanvasView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        // 避开顶部菜单栏（高度 = 整屏顶 - 可见区顶）。
+        self.canvasView.topInset = max(0, screen.frame.maxY - screen.visibleFrame.maxY)
 
         super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
 

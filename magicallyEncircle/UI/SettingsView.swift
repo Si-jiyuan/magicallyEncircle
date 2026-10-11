@@ -355,6 +355,10 @@ private struct GeneralSection: View {
 
                 Toggle("启用魔法线条", isOn: $controller.isEnabled)
                 Toggle("显示识别反馈", isOn: $controller.showRecognitionHUD)
+                Toggle("拖拽到屏幕边缘切换桌面", isOn: Binding(
+                    get: { controller.edgeSwitchEnabled },
+                    set: { controller.setEdgeSwitchEnabled($0) }
+                ))
                 Toggle("开机自启动", isOn: Binding(
                     get: { controller.launchAtLoginEnabled },
                     set: { controller.setLaunchAtLogin($0) }

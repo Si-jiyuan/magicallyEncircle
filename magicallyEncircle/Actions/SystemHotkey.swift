@@ -141,6 +141,8 @@ enum SystemHotkey {
         event.setIntegerValueField(gestureSwipeMotionField, value: horizontalMotion)
         event.setDoubleValueField(gestureScrollYField, value: 0)
         event.setDoubleValueField(gestureZoomDeltaXField, value: Double(Float.leastNonzeroMagnitude))
+        // 标注当前位置，尽量让 Dock 按「鼠标所在屏」切换（多屏场景）。
+        event.location = currentMouseCGLocation()
         return event
     }
 
@@ -148,8 +150,16 @@ enum SystemHotkey {
     private static func postDockPair(_ dock: CGEvent) {
         let companion = CGEvent(source: nil)
         companion?.setIntegerValueField(eventTypeField, value: gestureEventType)
+        companion?.location = currentMouseCGLocation()
         dock.post(tap: .cgSessionEventTap)
         companion?.post(tap: .cgSessionEventTap)
+    }
+
+    /// 当前鼠标位置（CoreGraphics 全局坐标，左上原点）。
+    private static func currentMouseCGLocation() -> CGPoint {
+        let appKit = NSEvent.mouseLocation
+        let primaryHeight = (NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first)?.frame.height ?? 0
+        return CGPoint(x: appKit.x, y: primaryHeight - appKit.y)
     }
 
     // MARK: - 锁定屏幕 / 打开 Mission Control
